@@ -108,16 +108,16 @@ method store(vp_VP this, vp_Candle candle, int vp_NUM_ROWS) =>
     this.step := (this.maxPrice - this.minPrice) / vp_NUM_ROWS
 
 method drawHistogram(vp_VP this, array<int> xs, int baseX, float step, float height, color color) =>
-    array<point> points = array.new<point>()
+    array<chart.point> points = array.new<chart.point>()
     float gap = (step - height) / 2
     for i = 0 to xs.size() - 1
         x = xs.get(i)
         float lo = i * step + gap + this.minPrice
         float hi = lo + height
-        points.push(point.from_index(baseX, lo))
-        points.push(point.from_index(x, lo))
-        points.push(point.from_index(x, hi))
-        points.push(point.from_index(baseX, hi))
+        points.push(chart.point.from_index(baseX, lo))
+        points.push(chart.point.from_index(x, lo))
+        points.push(chart.point.from_index(x, hi))
+        points.push(chart.point.from_index(baseX, hi))
     polyline.new(points, closed = true, line_color = color, fill_color = color)
 
 method update(vp_VP this, int vp_NUM_ROWS, int vp_MAX_WIDTH, int vp_HEIGHT_PERCENTAGE_PER_ROW, color vp_COLOR, bool vp_SHOW_DELTA, color vp_BUY_COLOR, color vp_SELL_COLOR, bool vp_DISPLAY_VA, int vp_VALUE_AREA_PERCENT, color vp_VAL_COLOR, color vp_VAH_COLOR, bool vp_DISPLAY_POC, color vp_POC_COLOR, int vp_BASE_OFFSET, bool vp_EXTEND_LEFT, int vp_LABEL_OFFSET) =>
@@ -172,7 +172,7 @@ method update(vp_VP this, int vp_NUM_ROWS, int vp_MAX_WIDTH, int vp_HEIGHT_PERCE
         int pocIndex = vp_maxIndex(dist)
         if not na(pocIndex)
             this.mark('POC', this.getBucketedPrice(pocIndex), xs.get(pocIndex), vp_POC_COLOR, height, vp_BASE_OFFSET, vp_EXTEND_LEFT, vp_LABEL_OFFSET)
-    polyline.new(array.from(point.from_index(baseX, this.maxPrice), point.from_index(baseX, this.minPrice)), line_color = chart.bg_color)
+    polyline.new(array.from(chart.point.from_index(baseX, this.maxPrice), chart.point.from_index(baseX, this.minPrice)), line_color = chart.bg_color)
 
 // SMC Module Types & Functions
 type smc_alerts
@@ -441,7 +441,7 @@ if (show_smc)
         var label l_abel = na
         if smc_modeInput == 'Present'
             l_abel.delete()
-        l_abel := label.new(point.new(labelTime, labelPrice), tag, xloc.bar_time, color=color(na), textcolor=labelColor, style=labelStyle, size=size.small)
+        l_abel := label.new(chart.point.new(labelTime, labelPrice), tag, xloc.bar_time, color=color(na), textcolor=labelColor, style=labelStyle, size=size.small)
     smc_drawEqualHighLow(p_ivot, level, size, equalHigh) =>
         smc_equalDisplay e_qualDisplay = equalHigh ? smc_equalHighDisplay : smc_equalLowDisplay
         tag = 'EQL', equalColor = smc_swingBullishColor, labelStyle = label.style_label_up
@@ -449,9 +449,9 @@ if (show_smc)
             tag := 'EQH', equalColor := smc_swingBearishColor, labelStyle := label.style_label_down
         if smc_modeInput == 'Present'
             line.delete(e_qualDisplay.l_ine), label.delete(e_qualDisplay.l_abel)
-        e_qualDisplay.l_ine := line.new(point.new(p_ivot.barTime, p_ivot.currentLevel), point.new(time[size], level), xloc = xloc.bar_time, color = equalColor, style = line.style_dotted)
+        e_qualDisplay.l_ine := line.new(chart.point.new(p_ivot.barTime, p_ivot.currentLevel), chart.point.new(time[size], level), xloc = xloc.bar_time, color = equalColor, style = line.style_dotted)
         labelPosition = math.round(0.5 * (p_ivot.barIndex + bar_index - size))
-        e_qualDisplay.l_abel := label.new(point.new(labelPosition, level), tag, xloc.bar_index, color = color(na), textcolor = equalColor, style = labelStyle, size = smc_equalHighsLowsSizeInput)
+        e_qualDisplay.l_abel := label.new(chart.point.new(labelPosition, level), tag, xloc.bar_index, color = color(na), textcolor = equalColor, style = labelStyle, size = smc_equalHighsLowsSizeInput)
     smc_getCurrentStructure(size, equalHighLow, internal) =>
         currentLeg = smc_leg(size), newPivot = smc_startOfNewLeg(currentLeg), pivotLow = smc_startOfBullishLeg(currentLeg), pivotHigh = smc_startOfBearishLeg(currentLeg)
         if newPivot
@@ -477,8 +477,8 @@ if (show_smc)
         var line l_ine = line.new(na, na, na, na, xloc=xloc.bar_time), var label l_abel = label.new(na, na)
         if smc_modeInput == 'Present'
             l_ine.delete(), l_abel.delete()
-        l_ine := line.new(point.new(p_ivot.barTime, p_ivot.currentLevel), point.new(time, p_ivot.currentLevel), xloc.bar_time, color=structureColor, style=lineStyle)
-        l_abel := label.new(point.new(math.round(0.5 * (p_ivot.barIndex + bar_index)), p_ivot.currentLevel), tag, xloc.bar_index, color=color(na), textcolor=structureColor, style=labelStyle, size=labelSize)
+        l_ine := line.new(chart.point.new(p_ivot.barTime, p_ivot.currentLevel), chart.point.new(time, p_ivot.currentLevel), xloc.bar_time, color=structureColor, style=lineStyle)
+        l_abel := label.new(chart.point.new(math.round(0.5 * (p_ivot.barIndex + bar_index)), p_ivot.currentLevel), tag, xloc.bar_index, color=color(na), textcolor=structureColor, style=labelStyle, size=labelSize)
     smc_deleteOrderBlocks(internal) =>
         array<smc_orderBlock> orderBlocks = internal ? smc_internalOrderBlocks : smc_swingOrderBlocks
         for i = orderBlocks.size() - 1 to 0
@@ -512,7 +512,7 @@ if (show_smc)
                 eachOrderBlock = parsedOrdeBlocks.get(i)
                 orderBlockColor = smc_styleInput == 'Monochrome' ? (eachOrderBlock.bias == -1 ? color.new(smc_MONO_BEARISH, 80) : color.new(smc_MONO_BULLISH, 80)) : internal ? (eachOrderBlock.bias == -1 ? smc_internalBearishOrderBlockColor : smc_internalBullishOrderBlockColor) : (eachOrderBlock.bias == -1 ? smc_swingBearishOrderBlockColor : smc_swingBullishOrderBlockColor)
                 box b_ox = b_oxes.get(i)
-                b_ox.set_top_left(point.new(eachOrderBlock.barTime, eachOrderBlock.barHigh)), b_ox.set_bottom_right(point.new(last_bar_time, eachOrderBlock.barLow))
+                b_ox.set_top_left(chart.point.new(eachOrderBlock.barTime, eachOrderBlock.barHigh)), b_ox.set_bottom_right(chart.point.new(last_bar_time, eachOrderBlock.barLow))
                 b_ox.set_border_color(internal ? na : orderBlockColor), b_ox.set_bgcolor(orderBlockColor)
     smc_displayStructure(internal) =>
         bullishBar = true, bearishBar = true
@@ -540,7 +540,7 @@ if (show_smc)
             if (internal and smc_showInternalOrderBlocksInput) or (not internal and smc_showSwingOrderBlocksInput)
                 smc_storeOrdeBlock(p_ivot, internal, -1)
     smc_fairValueGapBox(leftTime, rightTime, topPrice, bottomPrice, boxColor) =>
-        box.new(point.new(leftTime, topPrice), point.new(rightTime + smc_fairValueGapsExtendInput * (time - time[1]), bottomPrice), xloc=xloc.bar_time, border_color=boxColor, bgcolor=boxColor)
+        box.new(chart.point.new(leftTime, topPrice), chart.point.new(rightTime + smc_fairValueGapsExtendInput * (time - time[1]), bottomPrice), xloc=xloc.bar_time, border_color=boxColor, bgcolor=boxColor)
     smc_deleteFairValueGaps() =>
         for i = smc_fairValueGaps.size() - 1 to 0
             eachFairValueGap = smc_fairValueGaps.get(i)
@@ -565,19 +565,19 @@ if (show_smc)
                 parsedTopTime := timeArray.get(topArray.indexof(topArray.max())), parsedBottomTime := timeArray.get(bottomArray.indexof(bottomArray.min()))
         var line topLine = line.new(na, na, na, na, xloc=xloc.bar_time, color=levelColor, style=smc_getStyle(style)), var line bottomLine = line.new(na, na, na, na, xloc=xloc.bar_time, color=levelColor, style=smc_getStyle(style))
         var label topLabel = label.new(na, na, xloc=xloc.bar_time, text=str.format('P{0}H', tf), color=color(na), textcolor=levelColor, size=size.small, style=label.style_label_left), var label bottomLabel = label.new(na, na, xloc=xloc.bar_time, text=str.format('P{0}L', tf), color=color(na), textcolor=levelColor, size=size.small, style=label.style_label_left)
-        topLine.set_p1(point.new(parsedTopTime, parsedTop)), topLine.set_p2(point.new(last_bar_time + 20 * (time - time[1]), parsedTop)), topLabel.set_xy(point.new(last_bar_time + 20 * (time - time[1]), parsedTop))
-        bottomLine.set_p1(point.new(parsedBottomTime, parsedBottom)), bottomLine.set_p2(point.new(last_bar_time + 20 * (time - time[1]), parsedBottom)), bottomLabel.set_xy(point.new(last_bar_time + 20 * (time - time[1]), parsedBottom))
+        topLine.set_p1(chart.point.new(parsedTopTime, parsedTop)), topLine.set_p2(chart.point.new(last_bar_time + 20 * (time - time[1]), parsedTop)), topLabel.set_xy(chart.point.new(last_bar_time + 20 * (time - time[1]), parsedTop))
+        bottomLine.set_p1(chart.point.new(parsedBottomTime, parsedBottom)), bottomLine.set_p2(chart.point.new(last_bar_time + 20 * (time - time[1]), parsedBottom)), bottomLabel.set_xy(chart.point.new(last_bar_time + 20 * (time - time[1]), parsedBottom))
     smc_updateTrailingExtremes() =>
         smc_trailing.top := math.max(high, smc_trailing.top), smc_trailing.lastTopTime := smc_trailing.top == high ? time : smc_trailing.lastTopTime, smc_trailing.bottom := math.min(low, smc_trailing.bottom), smc_trailing.lastBottomTime := smc_trailing.bottom == low ? time : smc_trailing.lastBottomTime
     smc_drawHighLowSwings() =>
         var line topLine = line.new(na, na, na, na, color=smc_swingBearishColor, xloc=xloc.bar_time), var line bottomLine = line.new(na, na, na, na, color=smc_swingBullishColor, xloc=xloc.bar_time)
         var label topLabel = label.new(na, na, color=color(na), textcolor=smc_swingBearishColor, xloc=xloc.bar_time, style=label.style_label_down, size=size.tiny), var label bottomLabel = label.new(na, na, color=color(na), textcolor=smc_swingBullishColor, xloc=xloc.bar_time, style=label.style_label_up, size=size.tiny)
         rightTimeBar = last_bar_time + 20 * (time - time[1])
-        topLine.set_p1(point.new(smc_trailing.lastTopTime, smc_trailing.top)), topLine.set_p2(point.new(rightTimeBar, smc_trailing.top)), topLabel.set_xy(point.new(rightTimeBar, smc_trailing.top)), topLabel.set_text(smc_swingTrend.bias == -1 ? 'Strong High' : 'Weak High')
-        bottomLine.set_p1(point.new(smc_trailing.lastBottomTime, smc_trailing.bottom)), bottomLine.set_p2(point.new(rightTimeBar, smc_trailing.bottom)), bottomLabel.set_xy(point.new(rightTimeBar, smc_trailing.bottom)), bottomLabel.set_text(smc_swingTrend.bias == 1 ? 'Strong Low' : 'Weak Low')
+        topLine.set_p1(chart.point.new(smc_trailing.lastTopTime, smc_trailing.top)), topLine.set_p2(chart.point.new(rightTimeBar, smc_trailing.top)), topLabel.set_xy(chart.point.new(rightTimeBar, smc_trailing.top)), topLabel.set_text(smc_swingTrend.bias == -1 ? 'Strong High' : 'Weak High')
+        bottomLine.set_p1(chart.point.new(smc_trailing.lastBottomTime, smc_trailing.bottom)), bottomLine.set_p2(chart.point.new(rightTimeBar, smc_trailing.bottom)), bottomLabel.set_xy(chart.point.new(rightTimeBar, smc_trailing.bottom)), bottomLabel.set_text(smc_swingTrend.bias == 1 ? 'Strong Low' : 'Weak Low')
     smc_drawZone(labelLevel, labelIndex, top, bottom, tag, zoneColor, style) =>
         var label l_abel = label.new(na, na, text=tag, color=color(na), textcolor=zoneColor, style=style, size=size.small), var box b_ox = box.new(na, na, na, na, bgcolor=color.new(zoneColor, 80), border_color=color(na), xloc=xloc.bar_time)
-        b_ox.set_top_left(point.new(smc_trailing.barTime, top)), b_ox.set_bottom_right(point.new(last_bar_time, bottom)), l_abel.set_xy(point.new(labelIndex, labelLevel))
+        b_ox.set_top_left(chart.point.new(smc_trailing.barTime, top)), b_ox.set_bottom_right(chart.point.new(last_bar_time, bottom)), l_abel.set_xy(chart.point.new(labelIndex, labelLevel))
     smc_drawPremiumDiscountZones() =>
         smc_drawZone(smc_trailing.top, math.round(0.5 * (smc_trailing.barIndex + last_bar_index)), smc_trailing.top, 0.95 * smc_trailing.top + 0.05 * smc_trailing.bottom, 'Premium', smc_premiumZoneColor, label.style_label_down)
         equilibriumLevel = math.avg(smc_trailing.top, smc_trailing.bottom)
