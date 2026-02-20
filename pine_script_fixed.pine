@@ -58,21 +58,6 @@ type vp_Marker
     line extendedLine
     label label
 
-    set(string name, int left, int right, float price, color bg, float height, bool vp_EXTEND_LEFT, int vp_LABEL_OFFSET)
-        if not na(this.poly)
-            this.poly.delete()
-        float bottom = price - height / 2
-        float top = bottom + height
-        this.poly := polyline.new(array.from(chart.point.from_index(left, bottom), chart.point.from_index(left, top), chart.point.from_index(right, top), chart.point.from_index(right, bottom)), line_color = bg, fill_color = bg)
-        if not na(this.extendedLine)
-            this.extendedLine.delete()
-        if vp_EXTEND_LEFT
-            this.extendedLine := line.new(x1 = left, y1 = price, x2 = right, y2 = price, extend = extend.left, style = line.style_dotted, color = bg)
-        if not na(this.label)
-            this.label.delete()
-        string txt = str.format('{0}: {1}', name, math.round_to_mintick(price))
-        this.label := label.new(x = bar_index + vp_LABEL_OFFSET, y = price, text = txt, style = label.style_label_left, size = size.small, color = bg, textcolor = vp_f_contrastColor(bg))
-
 type vp_VP
     array<vp_Candle> candles
     float minPrice
@@ -83,96 +68,111 @@ type vp_VP
     polyline sellPoly
     map<string, vp_Marker> markers
 
-    init()
-        this.candles := array.new<vp_Candle>()
-        this.markers := map.new<string, vp_Marker>()
-        
-    getBucketIndex(float price, int vp_NUM_ROWS) =>
-        math.min(math.floor((price - this.minPrice) / this.step), vp_NUM_ROWS - 1)
+method set(vp_Marker this, string name, int left, int right, float price, color bg, float height, bool vp_EXTEND_LEFT, int vp_LABEL_OFFSET) =>
+    if not na(this.poly)
+        this.poly.delete()
+    float bottom = price - height / 2
+    float top = bottom + height
+    this.poly := polyline.new(array.from(chart.point.from_index(left, bottom), chart.point.from_index(left, top), chart.point.from_index(right, top), chart.point.from_index(right, bottom)), line_color = bg, fill_color = bg)
+    if not na(this.extendedLine)
+        this.extendedLine.delete()
+    if vp_EXTEND_LEFT
+        this.extendedLine := line.new(x1 = left, y1 = price, x2 = right, y2 = price, extend = extend.left, style = line.style_dotted, color = bg)
+    if not na(this.label)
+        this.label.delete()
+    string txt = str.format('{0}: {1}', name, math.round_to_mintick(price))
+    this.label := label.new(x = bar_index + vp_LABEL_OFFSET, y = price, text = txt, style = label.style_label_left, size = size.small, color = bg, textcolor = vp_f_contrastColor(bg))
 
-    getBucketedPrice(int index) =>
-        (index + 0.5) * this.step + this.minPrice
+method init(vp_VP this) =>
+    this.candles := array.new<vp_Candle>()
+    this.markers := map.new<string, vp_Marker>()
 
-    mark(string name, float price, int left, color bg, float height, int vp_BASE_OFFSET, bool vp_EXTEND_LEFT, int vp_LABEL_OFFSET)
-        int right = bar_index + vp_BASE_OFFSET
-        vp_Marker marker = this.markers.get(name)
-        if na(marker)
-            marker := vp_Marker.new()
-        marker.set(name, left, right, price, bg, height, vp_EXTEND_LEFT, vp_LABEL_OFFSET)
-        this.markers.put(name, marker)
+method getBucketIndex(vp_VP this, float price, int vp_NUM_ROWS) =>
+    math.min(math.floor((price - this.minPrice) / this.step), vp_NUM_ROWS - 1)
 
-    store(vp_Candle candle, int vp_NUM_ROWS)
-        this.candles.push(candle)
-        this.minPrice := na(this.minPrice) ? candle.low : math.min(this.minPrice, candle.low)
-        this.maxPrice := na(this.maxPrice) ? candle.high : math.max(this.maxPrice, candle.high)
-        this.step := (this.maxPrice - this.minPrice) / vp_NUM_ROWS
+method getBucketedPrice(vp_VP this, int index) =>
+    (index + 0.5) * this.step + this.minPrice
 
-    drawHistogram(array<int> xs, int baseX, float step, float height, color color)
-        array<point> points = array.new<point>()
-        float gap = (step - height) / 2
-        for i = 0 to xs.size() - 1
-            x = xs.get(i)
-            float lo = i * step + gap + this.minPrice
-            float hi = lo + height
-            points.push(point.from_index(baseX, lo))
-            points.push(point.from_index(x, lo))
-            points.push(point.from_index(x, hi))
-            points.push(point.from_index(baseX, hi))
-        polyline.new(points, closed = true, line_color = color, fill_color = color)
+method mark(vp_VP this, string name, float price, int left, color bg, float height, int vp_BASE_OFFSET, bool vp_EXTEND_LEFT, int vp_LABEL_OFFSET) =>
+    int right = bar_index + vp_BASE_OFFSET
+    vp_Marker marker = this.markers.get(name)
+    if na(marker)
+        marker := vp_Marker.new()
+    marker.set(name, left, right, price, bg, height, vp_EXTEND_LEFT, vp_LABEL_OFFSET)
+    this.markers.put(name, marker)
 
-    update(int vp_NUM_ROWS, int vp_MAX_WIDTH, int vp_HEIGHT_PERCENTAGE_PER_ROW, color vp_COLOR, bool vp_SHOW_DELTA, color vp_BUY_COLOR, color vp_SELL_COLOR, bool vp_DISPLAY_VA, int vp_VALUE_AREA_PERCENT, color vp_VAL_COLOR, color vp_VAH_COLOR, bool vp_DISPLAY_POC, color vp_POC_COLOR, int vp_BASE_OFFSET, bool vp_EXTEND_LEFT, int vp_LABEL_OFFSET)
-        float step = (this.maxPrice - this.minPrice) / vp_NUM_ROWS
-        array<float> dist = array.new_float(vp_NUM_ROWS, 0)
-        array<float> deltaDist = array.new_float(vp_NUM_ROWS, 0)
-        for c in this.candles
-            int start = this.getBucketIndex(c.low, vp_NUM_ROWS)
-            int end = this.getBucketIndex(c.high, vp_NUM_ROWS)
-            int buckets = end - start + 1
-            float vol = c.volume / buckets
-            for i = start to end
-                dist.set(i, dist.get(i) + vol)
-                deltaDist.set(i, deltaDist.get(i) + vol * c.direction)
-        float maxVol = dist.max()
-        int baseX = bar_index + vp_BASE_OFFSET
-        array<int> xs = array.new_int()
-        for vol in dist
-            int width = na(maxVol) or maxVol == 0 ? 0 : math.round(vol / maxVol * vp_MAX_WIDTH)
+method store(vp_VP this, vp_Candle candle, int vp_NUM_ROWS) =>
+    this.candles.push(candle)
+    this.minPrice := na(this.minPrice) ? candle.low : math.min(this.minPrice, candle.low)
+    this.maxPrice := na(this.maxPrice) ? candle.high : math.max(this.maxPrice, candle.high)
+    this.step := (this.maxPrice - this.minPrice) / vp_NUM_ROWS
+
+method drawHistogram(vp_VP this, array<int> xs, int baseX, float step, float height, color color) =>
+    array<point> points = array.new<point>()
+    float gap = (step - height) / 2
+    for i = 0 to xs.size() - 1
+        x = xs.get(i)
+        float lo = i * step + gap + this.minPrice
+        float hi = lo + height
+        points.push(point.from_index(baseX, lo))
+        points.push(point.from_index(x, lo))
+        points.push(point.from_index(x, hi))
+        points.push(point.from_index(baseX, hi))
+    polyline.new(points, closed = true, line_color = color, fill_color = color)
+
+method update(vp_VP this, int vp_NUM_ROWS, int vp_MAX_WIDTH, int vp_HEIGHT_PERCENTAGE_PER_ROW, color vp_COLOR, bool vp_SHOW_DELTA, color vp_BUY_COLOR, color vp_SELL_COLOR, bool vp_DISPLAY_VA, int vp_VALUE_AREA_PERCENT, color vp_VAL_COLOR, color vp_VAH_COLOR, bool vp_DISPLAY_POC, color vp_POC_COLOR, int vp_BASE_OFFSET, bool vp_EXTEND_LEFT, int vp_LABEL_OFFSET) =>
+    float step = (this.maxPrice - this.minPrice) / vp_NUM_ROWS
+    array<float> dist = array.new_float(vp_NUM_ROWS, 0)
+    array<float> deltaDist = array.new_float(vp_NUM_ROWS, 0)
+    for c in this.candles
+        int start = this.getBucketIndex(c.low, vp_NUM_ROWS)
+        int end = this.getBucketIndex(c.high, vp_NUM_ROWS)
+        int buckets = end - start + 1
+        float vol = c.volume / buckets
+        for i = start to end
+            dist.set(i, dist.get(i) + vol)
+            deltaDist.set(i, deltaDist.get(i) + vol * c.direction)
+    float maxVol = dist.max()
+    int baseX = bar_index + vp_BASE_OFFSET
+    array<int> xs = array.new_int()
+    for vol in dist
+        int width = na(maxVol) or maxVol == 0 ? 0 : math.round(vol / maxVol * vp_MAX_WIDTH)
+        int x = baseX - width
+        xs.push(x)
+    float height = vp_HEIGHT_PERCENTAGE_PER_ROW / 100 * step
+    if not na(this.poly)
+        this.poly.delete()
+    this.poly := this.drawHistogram(xs, baseX, step, height, vp_COLOR)
+    if vp_SHOW_DELTA
+        array<int> buyXs = array.new_int()
+        array<int> sellXs = array.new_int()
+        for vol in deltaDist
+            int width = na(maxVol) or maxVol == 0 ? 0 : math.round(math.abs(vol) / maxVol * vp_MAX_WIDTH)
             int x = baseX - width
-            xs.push(x)
-        float height = vp_HEIGHT_PERCENTAGE_PER_ROW / 100 * step
-        if not na(this.poly)
-            this.poly.delete()
-        this.poly := this.drawHistogram(xs, baseX, step, height, vp_COLOR)
-        if vp_SHOW_DELTA
-            array<int> buyXs = array.new_int()
-            array<int> sellXs = array.new_int()
-            for vol in deltaDist
-                int width = na(maxVol) or maxVol == 0 ? 0 : math.round(math.abs(vol) / maxVol * vp_MAX_WIDTH)
-                int x = baseX - width
-                buyXs.push(vol > 0 ? x : baseX)
-                sellXs.push(vol < 0 ? x : baseX)
-            if not na(this.buyPoly)
-                this.buyPoly.delete()
-            this.buyPoly := this.drawHistogram(buyXs, baseX, step, height, vp_BUY_COLOR)
-            if not na(this.sellPoly)
-                this.sellPoly.delete()
-            this.sellPoly := this.drawHistogram(sellXs, baseX, step, height, vp_SELL_COLOR)
-        array<float> cumdist = dist.copy()
-        for i = 1 to cumdist.size() - 1
-            cumdist.set(i, cumdist.get(i - 1) + cumdist.get(i))
-        float totalVolume = cumdist.last()
-        if vp_DISPLAY_VA and not na(totalVolume)
-            float valPercentile = (100 - vp_VALUE_AREA_PERCENT) / 100 / 2
-            float vahPercentile = 1 - valPercentile
-            int valIndex = cumdist.binary_search_leftmost(totalVolume * valPercentile)
-            this.mark('VAL', this.getBucketedPrice(valIndex), xs.get(valIndex), vp_VAL_COLOR, height, vp_BASE_OFFSET, vp_EXTEND_LEFT, vp_LABEL_OFFSET)
-            int vahIndex = cumdist.binary_search_leftmost(totalVolume * vahPercentile)
-            this.mark('VAH', this.getBucketedPrice(vahIndex), xs.get(vahIndex), vp_VAH_COLOR, height, vp_BASE_OFFSET, vp_EXTEND_LEFT, vp_LABEL_OFFSET)
-        if vp_DISPLAY_POC
-            int pocIndex = vp_maxIndex(dist)
-            if not na(pocIndex)
-                this.mark('POC', this.getBucketedPrice(pocIndex), xs.get(pocIndex), vp_POC_COLOR, height, vp_BASE_OFFSET, vp_EXTEND_LEFT, vp_LABEL_OFFSET)
-        polyline.new(array.from(point.from_index(baseX, this.maxPrice), point.from_index(baseX, this.minPrice)), line_color = chart.bg_color)
+            buyXs.push(vol > 0 ? x : baseX)
+            sellXs.push(vol < 0 ? x : baseX)
+        if not na(this.buyPoly)
+            this.buyPoly.delete()
+        this.buyPoly := this.drawHistogram(buyXs, baseX, step, height, vp_BUY_COLOR)
+        if not na(this.sellPoly)
+            this.sellPoly.delete()
+        this.sellPoly := this.drawHistogram(sellXs, baseX, step, height, vp_SELL_COLOR)
+    array<float> cumdist = dist.copy()
+    for i = 1 to cumdist.size() - 1
+        cumdist.set(i, cumdist.get(i - 1) + cumdist.get(i))
+    float totalVolume = cumdist.last()
+    if vp_DISPLAY_VA and not na(totalVolume)
+        float valPercentile = (100 - vp_VALUE_AREA_PERCENT) / 100 / 2
+        float vahPercentile = 1 - valPercentile
+        int valIndex = cumdist.binary_search_leftmost(totalVolume * valPercentile)
+        this.mark('VAL', this.getBucketedPrice(valIndex), xs.get(valIndex), vp_VAL_COLOR, height, vp_BASE_OFFSET, vp_EXTEND_LEFT, vp_LABEL_OFFSET)
+        int vahIndex = cumdist.binary_search_leftmost(totalVolume * vahPercentile)
+        this.mark('VAH', this.getBucketedPrice(vahIndex), xs.get(vahIndex), vp_VAH_COLOR, height, vp_BASE_OFFSET, vp_EXTEND_LEFT, vp_LABEL_OFFSET)
+    if vp_DISPLAY_POC
+        int pocIndex = vp_maxIndex(dist)
+        if not na(pocIndex)
+            this.mark('POC', this.getBucketedPrice(pocIndex), xs.get(pocIndex), vp_POC_COLOR, height, vp_BASE_OFFSET, vp_EXTEND_LEFT, vp_LABEL_OFFSET)
+    polyline.new(array.from(point.from_index(baseX, this.maxPrice), point.from_index(baseX, this.minPrice)), line_color = chart.bg_color)
 
 // SMC Module Types & Functions
 type smc_alerts
