@@ -1,0 +1,915 @@
+//@version=6
+
+indicator("All-in-One Analysis Tool", shorttitle="AIO Tool", overlay=true)
+
+// =============================================================================
+//                      GLOBAL INPUTS & EARLY DEFS
+// =============================================================================
+// This input is needed for a global function, so it must be defined globally.
+string vp_GRANULARITY_GROUP_GLOBAL = "Anchored/Visible Range VP | Granularity"
+bool vp_USE_SECOND_BASED_TIMEFRAMES = input.bool(false, 'Use Second-Based Timeframes', group = vp_GRANULARITY_GROUP_GLOBAL)
+int vp_MIN_TIMEFRAME_IN_SECONDS = vp_USE_SECOND_BASED_TIMEFRAMES ? 1 : 60
+
+// =============================================================================
+//                      GLOBAL TYPE AND FUNCTION DECLARATIONS
+// =============================================================================
+
+// MA Module Function
+f_get_ma(src, length, ma_type) =>
+    switch ma_type
+        "SMA" => ta.sma(src, length)
+        "EMA" => ta.ema(src, length)
+        "WMA" => ta.wma(src, length)
+        "RMA" => ta.rma(src, length)
+        "HMA" => ta.hma(src, length)
+        => na
+
+// VP Module Functions & Types
+vp_f_contrastColor(color bgColor) =>
+    r = color.r(bgColor)
+    g = color.g(bgColor)
+    b = color.b(bgColor)
+    lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    lum > 0.5 ? color.black : color.white
+
+vp_ltf(int multiplier) =>
+    timeframe.from_seconds(math.max(vp_MIN_TIMEFRAME_IN_SECONDS, math.round(timeframe.in_seconds() / multiplier)))
+
+vp_maxIndex(array<float> a) =>
+    float maxVal = na
+    int maxIdx = na
+    if a.size() > 0
+        maxVal := a.get(0)
+        maxIdx := 0
+        for i = 1 to a.size() - 1
+            if a.get(i) > maxVal
+                maxVal := a.get(i)
+                maxIdx := i
+    maxIdx
+
+type vp_Candle
+    float high
+    float low
+    float volume = 1
+    int direction
+
+type vp_Marker
+    polyline poly
+    line extendedLine
+    label label
+
+type vp_VP
+    array<vp_Candle> candles
+    float minPrice
+    float maxPrice
+    float step
+    polyline poly
+    polyline buyPoly
+    polyline sellPoly
+    map<string, vp_Marker> markers
+
+method set(vp_Marker this, string name, int left, int right, float price, color bg, float height, bool vp_EXTEND_LEFT, int vp_LABEL_OFFSET) =>
+    if not na(this.poly)
+        this.poly.delete()
+    float bottom = price - height / 2
+    float top = bottom + height
+    this.poly := polyline.new(array.from(chart.point.from_index(left, bottom), chart.point.from_index(left, top), chart.point.from_index(right, top), chart.point.from_index(right, bottom)), line_color = bg, fill_color = bg)
+    if not na(this.extendedLine)
+        this.extendedLine.delete()
+    if vp_EXTEND_LEFT
+        this.extendedLine := line.new(x1 = left, y1 = price, x2 = right, y2 = price, extend = extend.left, style = line.style_dotted, color = bg)
+    if not na(this.label)
+        this.label.delete()
+    string txt = str.format('{0}: {1}', name, math.round_to_mintick(price))
+    this.label := label.new(x = bar_index + vp_LABEL_OFFSET, y = price, text = txt, style = label.style_label_left, size = size.small, color = bg, textcolor = vp_f_contrastColor(bg))
+
+method init(vp_VP this) =>
+    this.candles := array.new<vp_Candle>()
+    this.markers := map.new<string, vp_Marker>()
+
+method getBucketIndex(vp_VP this, float price, int vp_NUM_ROWS) =>
+    math.min(math.floor((price - this.minPrice) / this.step), vp_NUM_ROWS - 1)
+
+method getBucketedPrice(vp_VP this, int index) =>
+    (index + 0.5) * this.step + this.minPrice
+
+method mark(vp_VP this, string name, float price, int left, color bg, float height, int vp_BASE_OFFSET, bool vp_EXTEND_LEFT, int vp_LABEL_OFFSET) =>
+    int right = bar_index + vp_BASE_OFFSET
+    vp_Marker marker = this.markers.get(name)
+    if na(marker)
+        marker := vp_Marker.new()
+    marker.set(name, left, right, price, bg, height, vp_EXTEND_LEFT, vp_LABEL_OFFSET)
+    this.markers.put(name, marker)
+
+method store(vp_VP this, vp_Candle candle, int vp_NUM_ROWS) =>
+    this.candles.push(candle)
+    this.minPrice := na(this.minPrice) ? candle.low : math.min(this.minPrice, candle.low)
+    this.maxPrice := na(this.maxPrice) ? candle.high : math.max(this.maxPrice, candle.high)
+    this.step := (this.maxPrice - this.minPrice) / vp_NUM_ROWS
+
+method drawHistogram(vp_VP this, array<int> xs, int baseX, float step, float height, color color) =>
+    array<chart.point> points = array.new<chart.point>()
+    float gap = (step - height) / 2
+    for i = 0 to xs.size() - 1
+        x = xs.get(i)
+        float lo = i * step + gap + this.minPrice
+        float hi = lo + height
+        points.push(chart.point.from_index(baseX, lo))
+        points.push(chart.point.from_index(x, lo))
+        points.push(chart.point.from_index(x, hi))
+        points.push(chart.point.from_index(baseX, hi))
+    polyline.new(points, closed = true, line_color = color, fill_color = color)
+
+method update(vp_VP this, int vp_NUM_ROWS, int vp_MAX_WIDTH, int vp_HEIGHT_PERCENTAGE_PER_ROW, color vp_COLOR, bool vp_SHOW_DELTA, color vp_BUY_COLOR, color vp_SELL_COLOR, bool vp_DISPLAY_VA, int vp_VALUE_AREA_PERCENT, color vp_VAL_COLOR, color vp_VAH_COLOR, bool vp_DISPLAY_POC, color vp_POC_COLOR, int vp_BASE_OFFSET, bool vp_EXTEND_LEFT, int vp_LABEL_OFFSET) =>
+    float step = (this.maxPrice - this.minPrice) / vp_NUM_ROWS
+    array<float> dist = array.new_float(vp_NUM_ROWS, 0)
+    array<float> deltaDist = array.new_float(vp_NUM_ROWS, 0)
+    for c in this.candles
+        int start = this.getBucketIndex(c.low, vp_NUM_ROWS)
+        int end = this.getBucketIndex(c.high, vp_NUM_ROWS)
+        int buckets = end - start + 1
+        float vol = c.volume / buckets
+        for i = start to end
+            dist.set(i, dist.get(i) + vol)
+            deltaDist.set(i, deltaDist.get(i) + vol * c.direction)
+    float maxVol = dist.max()
+    int baseX = bar_index + vp_BASE_OFFSET
+    array<int> xs = array.new_int()
+    for vol in dist
+        int width = na(maxVol) or maxVol == 0 ? 0 : math.round(vol / maxVol * vp_MAX_WIDTH)
+        int x = baseX - width
+        xs.push(x)
+    float height = vp_HEIGHT_PERCENTAGE_PER_ROW / 100 * step
+    if not na(this.poly)
+        this.poly.delete()
+    this.poly := this.drawHistogram(xs, baseX, step, height, vp_COLOR)
+    if vp_SHOW_DELTA
+        array<int> buyXs = array.new_int()
+        array<int> sellXs = array.new_int()
+        for vol in deltaDist
+            int width = na(maxVol) or maxVol == 0 ? 0 : math.round(math.abs(vol) / maxVol * vp_MAX_WIDTH)
+            int x = baseX - width
+            buyXs.push(vol > 0 ? x : baseX)
+            sellXs.push(vol < 0 ? x : baseX)
+        if not na(this.buyPoly)
+            this.buyPoly.delete()
+        this.buyPoly := this.drawHistogram(buyXs, baseX, step, height, vp_BUY_COLOR)
+        if not na(this.sellPoly)
+            this.sellPoly.delete()
+        this.sellPoly := this.drawHistogram(sellXs, baseX, step, height, vp_SELL_COLOR)
+    array<float> cumdist = dist.copy()
+    for i = 1 to cumdist.size() - 1
+        cumdist.set(i, cumdist.get(i - 1) + cumdist.get(i))
+    float totalVolume = cumdist.last()
+    if vp_DISPLAY_VA and not na(totalVolume)
+        float valPercentile = (100 - vp_VALUE_AREA_PERCENT) / 100 / 2
+        float vahPercentile = 1 - valPercentile
+        int valIndex = cumdist.binary_search_leftmost(totalVolume * valPercentile)
+        this.mark('VAL', this.getBucketedPrice(valIndex), xs.get(valIndex), vp_VAL_COLOR, height, vp_BASE_OFFSET, vp_EXTEND_LEFT, vp_LABEL_OFFSET)
+        int vahIndex = cumdist.binary_search_leftmost(totalVolume * vahPercentile)
+        this.mark('VAH', this.getBucketedPrice(vahIndex), xs.get(vahIndex), vp_VAH_COLOR, height, vp_BASE_OFFSET, vp_EXTEND_LEFT, vp_LABEL_OFFSET)
+    if vp_DISPLAY_POC
+        int pocIndex = vp_maxIndex(dist)
+        if not na(pocIndex)
+            this.mark('POC', this.getBucketedPrice(pocIndex), xs.get(pocIndex), vp_POC_COLOR, height, vp_BASE_OFFSET, vp_EXTEND_LEFT, vp_LABEL_OFFSET)
+    polyline.new(array.from(chart.point.from_index(baseX, this.maxPrice), chart.point.from_index(baseX, this.minPrice)), line_color = chart.bg_color)
+
+// SMC Module Types & Functions
+type smc_alerts
+    bool internalBullishBOS
+    bool internalBearishBOS
+    bool internalBullishCHoCH
+    bool internalBearishCHoCH
+    bool swingBullishBOS
+    bool swingBearishBOS
+    bool swingBullishCHoCH
+    bool swingBearishCHoCH
+    bool internalBullishOrderBlock
+    bool internalBearishOrderBlock
+    bool swingBullishOrderBlock
+    bool swingBearishOrderBlock
+    bool equalHighs
+    bool equalLows
+    bool bullishFairValueGap
+    bool bearishFairValueGap
+type smc_trailingExtremes
+    float top
+    float bottom
+    int barTime
+    int barIndex
+    int lastTopTime
+    int lastBottomTime
+type smc_fairValueGap
+    float top
+    float bottom
+    int bias
+    box topBox
+    box bottomBox
+type smc_trend
+    int bias
+type smc_equalDisplay
+    line l_ine = na
+    label l_abel = na
+type smc_pivot
+    float currentLevel
+    float lastLevel
+    bool crossed
+    int barTime = time
+    int barIndex = bar_index
+type smc_orderBlock
+    float barHigh
+    float barLow
+    int barTime
+    int bias
+
+smc_leg(size) =>
+    var leg = 0
+    newLegHigh = high[size] > ta.highest(size)
+    newLegLow = low[size] < ta.lowest(size)
+    if newLegHigh
+        leg := 0 // BEARISH_LEG
+    else if newLegLow
+        leg := 1 // BULLISH_LEG
+    leg
+smc_startOfNewLeg(leg) => ta.change(leg) != 0
+smc_startOfBearishLeg(leg) => ta.change(leg) == -1
+smc_startOfBullishLeg(leg) => ta.change(leg) == 1
+smc_getStyle(style) =>
+    switch style
+        '⎯⎯⎯' => line.style_solid
+        '----' => line.style_dashed
+        '····' => line.style_dotted
+        => na
+smc_higherTimeframe(tf) => timeframe.in_seconds(tf) > timeframe.in_seconds(timeframe.period)
+
+// SP Module Functions
+sp_get_vol(y11, y12, y21, y22, height, vol) => 
+    nz(math.max(math.min(math.max(y11, y12), math.max(y21, y22)) - math.max(math.min(y11, y12), math.min(y21, y22)), 0) * vol / height)
+
+
+// =============================================================================
+//                      1. MASTER ON/OFF SWITCHES
+// =============================================================================
+string master_group = "Master On/Off Switches"
+bool show_mas_vwap = input.bool(true, "Show MAs & VWAP", group=master_group, tooltip="Master switch for all Moving Averages and the VWAP.")
+bool show_vp = input.bool(false, "Show Anchored/Visible Range VP", group=master_group, tooltip="Master switch for the advanced Volume Profile. Note: This is resource-intensive and may slow down the chart.")
+bool show_smc = input.bool(true, "Show Smart Money Concepts", group=master_group, tooltip="Master switch for Order Blocks, Market Structure, Fair Value Gaps, etc.")
+bool show_sp = input.bool(true, "Show Session Profile", group=master_group, tooltip="Master switch for the session-based Volume Profile (Daily, Weekly, etc.).")
+input.string("", "─────────────────", group = master_group, tooltip="Visually separates the different indicator modules in the settings.")
+
+
+// =============================================================================
+//                      2. MOVING AVERAGES & VWAP MODULE
+// =============================================================================
+if (show_mas_vwap)
+    string mav_group = "Moving Averages & VWAP"
+    string mav_g1 = mav_group + " | MA 1"
+    bool mav_ma1_enabled = input.bool(true, "Enable MA1", group=mav_g1, inline="MA1")
+    string mav_ma1_type = input.string("SMA", "Type", options=["SMA", "EMA", "WMA", "RMA", "HMA"], group=mav_g1, inline="MA1")
+    int mav_ma1_length = input.int(9, "Length", minval=1, group=mav_g1, inline="MA1")
+    color mav_ma1_color = input.color(color.red, "Color", group=mav_g1, inline="MA1")
+    string mav_g2 = mav_group + " | MA 2"
+    bool mav_ma2_enabled = input.bool(true, "Enable MA2", group=mav_g2, inline="MA2")
+    string mav_ma2_type = input.string("EMA", "Type", options=["SMA", "EMA", "WMA", "RMA", "HMA"], group=mav_g2, inline="MA2")
+    int mav_ma2_length = input.int(21, "Length", minval=1, group=mav_g2, inline="MA2")
+    color mav_ma2_color = input.color(color.blue, "Color", group=mav_g2, inline="MA2")
+    string mav_g3 = mav_group + " | MA 3"
+    bool mav_ma3_enabled = input.bool(true, "Enable MA3", group=mav_g3, inline="MA3")
+    string mav_ma3_type = input.string("SMA", "Type", options=["SMA", "EMA", "WMA", "RMA", "HMA"], group=mav_g3, inline="MA3")
+    int mav_ma3_length = input.int(50, "Length", minval=1, group=mav_g3, inline="MA3")
+    color mav_ma3_color = input.color(color.green, "Color", group=mav_g3, inline="MA3")
+    string mav_g4 = mav_group + " | MA 4"
+    bool mav_ma4_enabled = input.bool(true, "Enable MA4", group=mav_g4, inline="MA4")
+    string mav_ma4_type = input.string("SMA", "Type", options=["SMA", "EMA", "WMA", "RMA", "HMA"], group=mav_g4, inline="MA4")
+    int mav_ma4_length = input.int(100, "Length", minval=1, group=mav_g4, inline="MA4")
+    color mav_ma4_color = input.color(color.orange, "Color", group=mav_g4, inline="MA4")
+    string mav_g5 = mav_group + " | MA 5"
+    bool mav_ma5_enabled = input.bool(true, "Enable MA5", group=mav_g5, inline="MA5")
+    string mav_ma5_type = input.string("SMA", "Type", options=["SMA", "EMA", "WMA", "RMA", "HMA"], group=mav_g5, inline="MA5")
+    int mav_ma5_length = input.int(200, "Length", minval=1, group=mav_g5, inline="MA5")
+    color mav_ma5_color = input.color(color.purple, "Color", group=mav_g5, inline="MA5")
+    string mav_g6 = mav_group + " | VWAP"
+    bool mav_vwap_enabled = input.bool(true, "Enable VWAP", group=mav_g6)
+    color mav_vwap_color = input.color(color.white, "Color", group=mav_g6)
+
+    mav_ma1 = f_get_ma(close, mav_ma1_length, mav_ma1_type)
+    mav_ma2 = f_get_ma(close, mav_ma2_length, mav_ma2_type)
+    mav_ma3 = f_get_ma(close, mav_ma3_length, mav_ma3_type)
+    mav_ma4 = f_get_ma(close, mav_ma4_length, mav_ma4_type)
+    mav_ma5 = f_get_ma(close, mav_ma5_length, mav_ma5_type)
+    mav_vwap_value = ta.vwap(hlc3)
+    plot(mav_ma1_enabled ? mav_ma1 : na, color=mav_ma1_color, linewidth=2, title="MA1")
+    plot(mav_ma2_enabled ? mav_ma2 : na, color=mav_ma2_color, linewidth=2, title="MA2")
+    plot(mav_ma3_enabled ? mav_ma3 : na, color=mav_ma3_color, linewidth=2, title="MA3")
+    plot(mav_ma4_enabled ? mav_ma4 : na, color=mav_ma4_color, linewidth=2, title="MA4")
+    plot(mav_ma5_enabled ? mav_ma5 : na, color=mav_ma5_color, linewidth=2, title="MA5")
+    plot(mav_vwap_enabled ? mav_vwap_value : na, color=mav_vwap_color, linewidth=2, title="VWAP")
+
+
+// =============================================================================
+//                      3. ADVANCED VOLUME PROFILE MODULE
+// =============================================================================
+if (show_vp)
+    string vp_group = "Anchored/Visible Range VP"
+    string vp_MODE = input.string('Volume Profile', 'Mode', options = ['Volume Profile', 'Market Profile / TPO'], group = vp_group)
+    string vp_RANGE_GROUP = vp_group + " | Time Range"
+    string vp_RANGE_MODE = input.string('Visible Range', 'Range Mode', options = ['Visible Range', 'Anchored Range', 'All Range'], group = vp_RANGE_GROUP)
+    int vp_ANCHORED_TIME = input.time(timestamp('2023-01-01T12:00:00'), 'Anchor Time', group = vp_RANGE_GROUP)
+    string vp_GRANULARITY_GROUP = "Anchored/Visible Range VP | Granularity" // Redefine for local use
+    int vp_NUM_ROWS = input.int(300, 'Number of Rows', minval = 100, maxval = 2500, step = 100, group = vp_GRANULARITY_GROUP)
+    int vp_MAX_LTF_BARS = input.int(5000, 'Max Lower Timeframe Bars', minval = 1000, step = 1000, group = vp_GRANULARITY_GROUP)
+    string vp_APPEARANCE_GROUP = vp_group + " | Appearance"
+    int vp_HORIZONTAL_OFFSET = input.int(20, 'Horizontal Offset', step = 5, group = vp_APPEARANCE_GROUP)
+    int vp_MAX_WIDTH = input.int(80, 'Max Width', maxval = 500, minval = 10, step = 10, group = vp_APPEARANCE_GROUP)
+    int vp_HEIGHT_PERCENTAGE_PER_ROW = input.int(40, 'Height % per Row', minval = 1, maxval = 100, group = vp_APPEARANCE_GROUP)
+    bool vp_SHOW_DELTA = input.bool(false, 'Show Volume Delta', group = vp_APPEARANCE_GROUP)
+    string vp_COLOR_GROUP = vp_group + " | Color"
+    color vp_COLOR = input.color(#5d606b77, 'Default', group = vp_COLOR_GROUP)
+    color vp_BUY_COLOR = input.color(#00bcd480, 'Buy Volume', group = vp_COLOR_GROUP)
+    color vp_SELL_COLOR = input.color(#e91e6380, 'Sell Volume', group = vp_COLOR_GROUP)
+    color vp_POC_COLOR = input.color(color.yellow, 'POC (Point of Control)', group = vp_COLOR_GROUP)
+    color vp_VAH_COLOR = input.color(color.blue, 'VAH (Value Area High)', group = vp_COLOR_GROUP)
+    color vp_VAL_COLOR = input.color(color.blue, 'VAL (Value Area Low)', group = vp_COLOR_GROUP)
+    string vp_KEY_PRICES_GROUP = vp_group + " | POC & Value Area"
+    int vp_VALUE_AREA_PERCENT = input.int(70, 'Value Area Percent', minval = 1, maxval = 100, group = vp_KEY_PRICES_GROUP)
+    bool vp_DISPLAY_VA = input.bool(true, 'Display VAH/VAL', group = vp_KEY_PRICES_GROUP)
+    bool vp_DISPLAY_POC = input.bool(true, 'Display POC', group = vp_KEY_PRICES_GROUP)
+    bool vp_EXTEND_LEFT = input.bool(true, 'Extend Key Price Lines to the Left', group = vp_KEY_PRICES_GROUP)
+
+    int vp_BASE_OFFSET = vp_HORIZONTAL_OFFSET + vp_MAX_WIDTH
+    int vp_LABEL_OFFSET = vp_BASE_OFFSET + 2
+    int vp_START_TIME = switch vp_RANGE_MODE
+        'Visible Range' => chart.left_visible_bar_time
+        'Anchored Range' => vp_ANCHORED_TIME
+        'All Range' => 0
+        => 0
+
+    var vp_VP vp_instance = vp_VP.new()
+    if barstate.isfirst
+        vp_instance.init()
+    
+    simple string vp_ltf1  = timeframe.period
+    simple string vp_ltf2  = vp_ltf(2)
+    simple string vp_ltf4  = vp_ltf(4)
+    simple string vp_ltf8  = vp_ltf(8)
+    simple string vp_ltf16 = vp_ltf(16)
+    
+    bool vp_canProcess = time >= vp_START_TIME and (last_bar_index - bar_index) < vp_MAX_LTF_BARS
+    
+    bool vp_cp1 = vp_canProcess
+    [vp_cp2_val] = request.security(syminfo.tickerid, vp_ltf2, vp_canProcess, ignore_invalid_symbol=true)
+    [vp_cp4_val] = request.security(syminfo.tickerid, vp_ltf4, vp_canProcess, ignore_invalid_symbol=true)
+    [vp_cp8_val] = request.security(syminfo.tickerid, vp_ltf8, vp_canProcess, ignore_invalid_symbol=true)
+    [vp_cp16_val] = request.security(syminfo.tickerid, vp_ltf16, vp_canProcess, ignore_invalid_symbol=true)
+    
+    int vp_dir = switch
+        close > open => 1
+        close < open => -1
+        => 0
+    float vp_vol = vp_MODE == 'Volume Profile' ? nz(volume, 100) : 100
+    
+    [o, h, l, c, v, d] = request.security_lower_tf(syminfo.tickerid, timeframe.period, [open, high, low, close, vp_vol, vp_dir])
+    
+    var string vp_ltf_str = na
+    if na(vp_ltf_str)
+        vp_ltf_str := switch
+            vp_cp16_val => vp_ltf16
+            vp_cp8_val  => vp_ltf8
+            vp_cp4_val  => vp_ltf4
+            vp_cp2_val  => vp_ltf2
+            vp_cp1  => vp_ltf1
+            => na
+    
+    if not na(vp_ltf_str)
+        vp_candle = vp_Candle.new(h, l, v, d)
+        vp_instance.store(vp_candle, vp_NUM_ROWS)
+
+    if barstate.islast
+        vp_instance.update(vp_NUM_ROWS, vp_MAX_WIDTH, vp_HEIGHT_PERCENTAGE_PER_ROW, vp_COLOR, vp_SHOW_DELTA, vp_BUY_COLOR, vp_SELL_COLOR, vp_DISPLAY_VA, vp_VALUE_AREA_PERCENT, vp_VAL_COLOR, vp_VAH_COLOR, vp_DISPLAY_POC, vp_POC_COLOR, vp_BASE_OFFSET, vp_EXTEND_LEFT, vp_LABEL_OFFSET)
+
+
+// =============================================================================
+//                      4. SMART MONEY CONCEPTS MODULE
+// =============================================================================
+if (show_smc)
+    smc_GREEN = #089981, smc_RED = #F23645, smc_BLUE = #2157f3, smc_GRAY = #878b94, smc_MONO_BULLISH = #b2b5be, smc_MONO_BEARISH = #5d606b
+    smc_SMART_GROUP = 'Smart Money Concepts', smc_INTERNAL_GROUP = smc_SMART_GROUP + ' | Real Time Internal Structure', smc_SWING_GROUP = smc_SMART_GROUP + ' | Real Time Swing Structure', smc_BLOCKS_GROUP = smc_SMART_GROUP + ' | Order Blocks', smc_EQUAL_GROUP = smc_SMART_GROUP + ' | EQH/EQL', smc_GAPS_GROUP = smc_SMART_GROUP + ' | Fair Value Gaps', smc_LEVELS_GROUP = smc_SMART_GROUP + ' | Highs & Lows MTF', smc_ZONES_GROUP = smc_SMART_GROUP + ' | Premium & Discount Zones'
+    smc_modeInput = input.string('Historical', 'Mode', group=smc_SMART_GROUP, options=['Historical', 'Present'])
+    smc_styleInput = input.string('Colored', 'Style', group=smc_SMART_GROUP, options=['Colored', 'Monochrome'])
+    smc_showTrendInput = input(false, 'Color Candles', group=smc_SMART_GROUP)
+    smc_showInternalsInput = input(true, 'Show Internal Structure', group=smc_INTERNAL_GROUP)
+    smc_showInternalBullInput = input.string('All', 'Bullish Structure', group=smc_INTERNAL_GROUP, inline='ibull', options=['All','BOS','CHoCH'])
+    smc_internalBullColorInput = input(smc_GREEN, '', group=smc_INTERNAL_GROUP, inline='ibull')
+    smc_showInternalBearInput = input.string('All', 'Bearish Structure', group=smc_INTERNAL_GROUP, inline='ibear', options=['All','BOS','CHoCH'])
+    smc_internalBearColorInput = input(smc_RED, '', group=smc_INTERNAL_GROUP, inline='ibear')
+    smc_internalFilterConfluenceInput = input(false, 'Confluence Filter', group=smc_INTERNAL_GROUP)
+    smc_internalStructureSize = input.string(size.tiny, 'Internal Label Size', group=smc_INTERNAL_GROUP, options=[size.tiny,size.small,size.normal])
+    smc_showStructureInput = input(true, 'Show Swing Structure', group=smc_SWING_GROUP)
+    smc_showSwingBullInput = input.string('All', 'Bullish Structure', group=smc_SWING_GROUP, inline='bull', options=['All','BOS','CHoCH'])
+    smc_swingBullColorInput = input(smc_GREEN, '', group=smc_SWING_GROUP, inline='bull')
+    smc_showSwingBearInput = input.string('All', 'Bearish Structure', group=smc_SWING_GROUP, inline='bear', options=['All','BOS','CHoCH'])
+    smc_swingBearColorInput = input(smc_RED, '', group=smc_SWING_GROUP, inline='bear')
+    smc_swingStructureSize = input.string(size.small, 'Swing Label Size', group=smc_SWING_GROUP, options=[size.tiny,size.small,size.normal])
+    smc_showSwingsInput = input(false, 'Show Swings Points', group=smc_SWING_GROUP, inline='swings')
+    smc_swingsLengthInput = input.int(50, '', group=smc_SWING_GROUP, minval=10, inline='swings')
+    smc_showHighLowSwingsInput = input(true, 'Show Strong/Weak High/Low', group=smc_SWING_GROUP)
+    smc_showInternalOrderBlocksInput = input(true, 'Internal Order Blocks', group=smc_BLOCKS_GROUP, inline='iob')
+    smc_internalOrderBlocksSizeInput = input.int(5, '', group=smc_BLOCKS_GROUP, minval=1, maxval=20, inline='iob')
+    smc_showSwingOrderBlocksInput = input(false, 'Swing Order Blocks', group=smc_BLOCKS_GROUP, inline='ob')
+    smc_swingOrderBlocksSizeInput = input.int(5, '', group=smc_BLOCKS_GROUP, minval=1, maxval=20, inline='ob')
+    smc_orderBlockFilterInput = input.string('Atr', 'Order Block Filter', group=smc_BLOCKS_GROUP, options=['Atr', 'Cumulative Mean Range'])
+    smc_orderBlockMitigationInput = input.string('High/Low', 'Order Block Mitigation', group=smc_BLOCKS_GROUP, options=['Close','High/Low'])
+    smc_internalBullishOrderBlockColor = input.color(color.new(#3179f5, 80), 'Internal Bullish OB', group=smc_BLOCKS_GROUP)
+    smc_internalBearishOrderBlockColor = input.color(color.new(#f77c80, 80), 'Internal Bearish OB', group=smc_BLOCKS_GROUP)
+    smc_swingBullishOrderBlockColor = input.color(color.new(#1848cc, 80), 'Bullish OB', group=smc_BLOCKS_GROUP)
+    smc_swingBearishOrderBlockColor = input.color(color.new(#b22833, 80), 'Bearish OB', group=smc_BLOCKS_GROUP)
+    smc_showEqualHighsLowsInput = input(true, 'Equal High/Low', group=smc_EQUAL_GROUP)
+    smc_equalHighsLowsLengthInput = input.int(3, 'Bars Confirmation', group=smc_EQUAL_GROUP, minval=1)
+    smc_equalHighsLowsThresholdInput = input.float(0.1, 'Threshold', group=smc_EQUAL_GROUP, minval=0, maxval=0.5, step=0.1)
+    smc_equalHighsLowsSizeInput = input.string(size.tiny, 'Label Size', group=smc_EQUAL_GROUP, options=[size.tiny,size.small,size.normal])
+    smc_showFairValueGapsInput = input(false, 'Fair Value Gaps', group=smc_GAPS_GROUP)
+    smc_fairValueGapsThresholdInput = input(true, 'Auto Threshold', group=smc_GAPS_GROUP)
+    smc_fairValueGapsTimeframeInput = input.timeframe('', 'Timeframe', group=smc_GAPS_GROUP)
+    smc_fairValueGapsBullColorInput = input.color(color.new(#00ff68, 70), 'Bullish FVG', group=smc_GAPS_GROUP)
+    smc_fairValueGapsBearColorInput = input.color(color.new(#ff0008, 70), 'Bearish FVG', group=smc_GAPS_GROUP)
+    smc_fairValueGapsExtendInput = input.int(1, 'Extend FVG', group=smc_GAPS_GROUP, minval=0)
+    smc_showDailyLevelsInput = input(false, 'Daily', group=smc_LEVELS_GROUP, inline='daily')
+    smc_dailyLevelsStyleInput = input.string('⎯⎯⎯', '', group=smc_LEVELS_GROUP, inline='daily', options=['⎯⎯⎯','----','····'])
+    smc_dailyLevelsColorInput = input(smc_BLUE, '', group=smc_LEVELS_GROUP, inline='daily')
+    smc_showWeeklyLevelsInput = input(false, 'Weekly', group=smc_LEVELS_GROUP, inline='weekly')
+    smc_weeklyLevelsStyleInput = input.string('⎯⎯⎯', '', group=smc_LEVELS_GROUP, inline='weekly', options=['⎯⎯⎯','----','····'])
+    smc_weeklyLevelsColorInput = input(smc_BLUE, '', group=smc_LEVELS_GROUP, inline='weekly')
+    smc_showMonthlyLevelsInput = input(false, 'Monthly', group=smc_LEVELS_GROUP, inline='monthly')
+    smc_monthlyLevelsStyleInput = input.string('⎯⎯⎯', '', group=smc_LEVELS_GROUP, inline='monthly', options=['⎯⎯⎯','----','····'])
+    smc_monthlyLevelsColorInput = input(smc_BLUE, '', group=smc_LEVELS_GROUP, inline='monthly')
+    smc_showPremiumDiscountZonesInput = input(false, 'Premium/Discount Zones', group=smc_ZONES_GROUP)
+    smc_premiumZoneColorInput = input.color(smc_RED, 'Premium Zone', group=smc_ZONES_GROUP)
+    smc_equilibriumZoneColorInput = input.color(smc_GRAY, 'Equilibrium Zone', group=smc_ZONES_GROUP)
+    smc_discountZoneColorInput = input.color(smc_GREEN, 'Discount Zone', group=smc_ZONES_GROUP)
+
+    var smc_pivot smc_swingHigh = smc_pivot.new(na, na, false), var smc_pivot smc_swingLow = smc_pivot.new(na, na, false), var smc_pivot smc_internalHigh = smc_pivot.new(na, na, false), var smc_pivot smc_internalLow = smc_pivot.new(na, na, false), var smc_pivot smc_equalHigh = smc_pivot.new(na, na, false), var smc_pivot smc_equalLow = smc_pivot.new(na, na, false)
+    var smc_trend smc_swingTrend = smc_trend.new(0), var smc_trend smc_internalTrend = smc_trend.new(0)
+    var smc_equalDisplay smc_equalHighDisplay = smc_equalDisplay.new(), var smc_equalDisplay smc_equalLowDisplay = smc_equalDisplay.new()
+    var array<smc_fairValueGap> smc_fairValueGaps = array.new<smc_fairValueGap>()
+    var array<float> smc_parsedHighs = array.new<float>(), var array<float> smc_parsedLows = array.new<float>(), var array<float> smc_highs = array.new<float>(), var array<float> smc_lows = array.new<float>(), var array<int> smc_times = array.new<int>()
+    var smc_trailingExtremes smc_trailing = smc_trailingExtremes.new()
+    var array<smc_orderBlock> smc_swingOrderBlocks = array.new<smc_orderBlock>(), var array<smc_orderBlock> smc_internalOrderBlocks = array.new<smc_orderBlock>()
+    var array<box> smc_swingOrderBlocksBoxes = array.new<box>(), var array<box> smc_internalOrderBlocksBoxes = array.new<box>()
+    var smc_swingBullishColor = smc_styleInput == 'Monochrome' ? smc_MONO_BULLISH : smc_swingBullColorInput, var smc_swingBearishColor = smc_styleInput == 'Monochrome' ? smc_MONO_BEARISH : smc_swingBearColorInput, var smc_fairValueGapBullishColor = smc_styleInput == 'Monochrome' ? color.new(smc_MONO_BULLISH, 70) : smc_fairValueGapsBullColorInput, var smc_fairValueGapBearishColor = smc_styleInput == 'Monochrome' ? color.new(smc_MONO_BEARISH, 70) : smc_fairValueGapsBearColorInput, var smc_premiumZoneColor = smc_styleInput == 'Monochrome' ? smc_MONO_BEARISH : smc_premiumZoneColorInput, var smc_discountZoneColor = smc_styleInput == 'Monochrome' ? smc_MONO_BULLISH : smc_discountZoneColorInput
+    var smc_currentBarIndex = bar_index, var smc_lastBarIndex = bar_index
+    smc_alerts smc_currentAlerts = smc_alerts.new()
+    var smc_initialTime = time
+    if barstate.isfirst
+        if smc_showSwingOrderBlocksInput
+            for i = 1 to smc_swingOrderBlocksSizeInput
+                smc_swingOrderBlocksBoxes.push(box.new(na, na, na, na, xloc=xloc.bar_time, extend=extend.right))
+        if smc_showInternalOrderBlocksInput
+            for i = 1 to smc_internalOrderBlocksSizeInput
+                smc_internalOrderBlocksBoxes.push(box.new(na, na, na, na, xloc=xloc.bar_time, extend=extend.right))
+    smc_bearishOrderBlockMitigationSource = smc_orderBlockMitigationInput == 'Close' ? close : high
+    smc_bullishOrderBlockMitigationSource = smc_orderBlockMitigationInput == 'Close' ? close : low
+    smc_atrMeasure = ta.atr(200)
+    smc_volatilityMeasure = smc_orderBlockFilterInput == 'Atr' ? smc_atrMeasure : ta.cum(ta.tr) / bar_index
+    smc_highVolatilityBar = (high - low) >= (2 * smc_volatilityMeasure)
+    smc_parsedHigh = smc_highVolatilityBar ? low : high
+    smc_parsedLow = smc_highVolatilityBar ? high : low
+    smc_parsedHighs.push(smc_parsedHigh)
+    smc_parsedLows.push(smc_parsedLow)
+    smc_highs.push(high)
+    smc_lows.push(low)
+    smc_times.push(time)
+    
+    smc_drawLabel(labelTime, labelPrice, tag, labelColor, labelStyle) =>
+        var label l_abel = na
+        if smc_modeInput == 'Present'
+            l_abel.delete()
+        l_abel := label.new(chart.point.new(labelTime, labelPrice), tag, xloc.bar_time, color=color(na), textcolor=labelColor, style=labelStyle, size=size.small)
+    smc_drawEqualHighLow(p_ivot, level, size, equalHigh) =>
+        smc_equalDisplay e_qualDisplay = equalHigh ? smc_equalHighDisplay : smc_equalLowDisplay
+        tag = 'EQL', equalColor = smc_swingBullishColor, labelStyle = label.style_label_up
+        if equalHigh
+            tag := 'EQH', equalColor := smc_swingBearishColor, labelStyle := label.style_label_down
+        if smc_modeInput == 'Present'
+            line.delete(e_qualDisplay.l_ine), label.delete(e_qualDisplay.l_abel)
+        e_qualDisplay.l_ine := line.new(chart.point.new(p_ivot.barTime, p_ivot.currentLevel), chart.point.new(time[size], level), xloc = xloc.bar_time, color = equalColor, style = line.style_dotted)
+        labelPosition = math.round(0.5 * (p_ivot.barIndex + bar_index - size))
+        e_qualDisplay.l_abel := label.new(chart.point.new(labelPosition, level), tag, xloc.bar_index, color = color(na), textcolor = equalColor, style = labelStyle, size = smc_equalHighsLowsSizeInput)
+    smc_getCurrentStructure(size, equalHighLow, internal) =>
+        currentLeg = smc_leg(size), newPivot = smc_startOfNewLeg(currentLeg), pivotLow = smc_startOfBullishLeg(currentLeg), pivotHigh = smc_startOfBearishLeg(currentLeg)
+        if newPivot
+            if pivotLow
+                smc_pivot p_ivot = equalHighLow ? smc_equalLow : internal ? smc_internalLow : smc_swingLow
+                if equalHighLow and math.abs(p_ivot.currentLevel - low[size]) < smc_equalHighsLowsThresholdInput * smc_atrMeasure
+                    smc_drawEqualHighLow(p_ivot, low[size], size, false), smc_currentAlerts.equalLows := true
+                p_ivot.lastLevel := p_ivot.currentLevel, p_ivot.currentLevel := low[size], p_ivot.crossed := false, p_ivot.barTime := time[size], p_ivot.barIndex := bar_index[size]
+                if not equalHighLow and not internal
+                    smc_trailing.bottom := p_ivot.currentLevel, smc_trailing.barTime := p_ivot.barTime, smc_trailing.barIndex := p_ivot.barIndex, smc_trailing.lastBottomTime := p_ivot.barTime
+                if smc_showSwingsInput and not internal and not equalHighLow
+                    smc_drawLabel(time[size], p_ivot.currentLevel, p_ivot.currentLevel < p_ivot.lastLevel ? 'LL' : 'HL', smc_swingBullishColor, label.style_label_up)
+            else
+                smc_pivot p_ivot = equalHighLow ? smc_equalHigh : internal ? smc_internalHigh : smc_swingHigh
+                if equalHighLow and math.abs(p_ivot.currentLevel - high[size]) < smc_equalHighsLowsThresholdInput * smc_atrMeasure
+                    smc_drawEqualHighLow(p_ivot, high[size], size, true), smc_currentAlerts.equalHighs := true
+                p_ivot.lastLevel := p_ivot.currentLevel, p_ivot.currentLevel := high[size], p_ivot.crossed := false, p_ivot.barTime := time[size], p_ivot.barIndex := bar_index[size]
+                if not equalHighLow and not internal
+                    smc_trailing.top := p_ivot.currentLevel, smc_trailing.barTime := p_ivot.barTime, smc_trailing.barIndex := p_ivot.barIndex, smc_trailing.lastTopTime := p_ivot.barTime
+                if smc_showSwingsInput and not internal and not equalHighLow
+                    smc_drawLabel(time[size], p_ivot.currentLevel, p_ivot.currentLevel > p_ivot.lastLevel ? 'HH' : 'LH', smc_swingBearishColor, label.style_label_down)
+    smc_drawStructure(p_ivot, tag, structureColor, lineStyle, labelStyle, labelSize) =>
+        var line l_ine = line.new(na, na, na, na, xloc=xloc.bar_time), var label l_abel = label.new(na, na)
+        if smc_modeInput == 'Present'
+            l_ine.delete(), l_abel.delete()
+        l_ine := line.new(chart.point.new(p_ivot.barTime, p_ivot.currentLevel), chart.point.new(time, p_ivot.currentLevel), xloc.bar_time, color=structureColor, style=lineStyle)
+        l_abel := label.new(chart.point.new(math.round(0.5 * (p_ivot.barIndex + bar_index)), p_ivot.currentLevel), tag, xloc.bar_index, color=color(na), textcolor=structureColor, style=labelStyle, size=labelSize)
+    smc_deleteOrderBlocks(internal) =>
+        array<smc_orderBlock> orderBlocks = internal ? smc_internalOrderBlocks : smc_swingOrderBlocks
+        for i = orderBlocks.size() - 1 to 0
+            eachOrderBlock = orderBlocks.get(i), crossedOderBlock = false
+            if smc_bearishOrderBlockMitigationSource > eachOrderBlock.barHigh and eachOrderBlock.bias == -1 // BEARISH
+                crossedOderBlock := true, smc_currentAlerts.internalBearishOrderBlock := internal, smc_currentAlerts.swingBearishOrderBlock := not internal
+            else if smc_bullishOrderBlockMitigationSource < eachOrderBlock.barLow and eachOrderBlock.bias == 1 // BULLISH
+                crossedOderBlock := true, smc_currentAlerts.internalBullishOrderBlock := internal, smc_currentAlerts.swingBullishOrderBlock := not internal
+            if crossedOderBlock
+                orderBlocks.remove(i)
+    smc_storeOrdeBlock(p_ivot, internal, bias) =>
+        if (not internal and smc_showSwingOrderBlocksInput) or (internal and smc_showInternalOrderBlocksInput)
+            array<float> a_rray = na, int parsedIndex = na
+            if bias == -1 // BEARISH
+                a_rray := smc_parsedHighs.slice(p_ivot.barIndex, bar_index), parsedIndex := p_ivot.barIndex + (a_rray.size() > 0 ? a_rray.indexof(a_rray.max()) : na)
+            else
+                a_rray := smc_parsedLows.slice(p_ivot.barIndex, bar_index), parsedIndex := p_ivot.barIndex + (a_rray.size() > 0 ? a_rray.indexof(a_rray.min()) : na)
+            if not na(parsedIndex)
+                smc_orderBlock o_rderBlock = smc_orderBlock.new(smc_parsedHighs.get(parsedIndex), smc_parsedLows.get(parsedIndex), smc_times.get(parsedIndex), bias)
+                array<smc_orderBlock> orderBlocks = internal ? smc_internalOrderBlocks : smc_swingOrderBlocks
+                if orderBlocks.size() >= 100
+                    orderBlocks.pop()
+                orderBlocks.unshift(o_rderBlock)
+    smc_drawOrderBlocks(internal) =>
+        array<smc_orderBlock> orderBlocks = internal ? smc_internalOrderBlocks : smc_swingOrderBlocks
+        if orderBlocks.size() > 0
+            maxOrderBlocks = internal ? smc_internalOrderBlocksSizeInput : smc_swingOrderBlocksSizeInput
+            parsedOrdeBlocks = orderBlocks.slice(0, math.min(maxOrderBlocks, orderBlocks.size()))
+            array<box> b_oxes = internal ? smc_internalOrderBlocksBoxes : smc_swingOrderBlocksBoxes
+            for i = 0 to parsedOrdeBlocks.size() - 1
+                eachOrderBlock = parsedOrdeBlocks.get(i)
+                orderBlockColor = smc_styleInput == 'Monochrome' ? (eachOrderBlock.bias == -1 ? color.new(smc_MONO_BEARISH, 80) : color.new(smc_MONO_BULLISH, 80)) : internal ? (eachOrderBlock.bias == -1 ? smc_internalBearishOrderBlockColor : smc_internalBullishOrderBlockColor) : (eachOrderBlock.bias == -1 ? smc_swingBearishOrderBlockColor : smc_swingBullishOrderBlockColor)
+                box b_ox = b_oxes.get(i)
+                b_ox.set_top_left(chart.point.new(eachOrderBlock.barTime, eachOrderBlock.barHigh)), b_ox.set_bottom_right(chart.point.new(last_bar_time, eachOrderBlock.barLow))
+                b_ox.set_border_color(internal ? na : orderBlockColor), b_ox.set_bgcolor(orderBlockColor)
+    smc_displayStructure(internal) =>
+        bullishBar = true, bearishBar = true
+        if smc_internalFilterConfluenceInput
+            bullishBar := high - math.max(close, open) > math.min(close, open - low), bearishBar := high - math.max(close, open) < math.min(close, open - low)
+        smc_pivot p_ivot = internal ? smc_internalHigh : smc_swingHigh, smc_trend t_rend = internal ? smc_internalTrend : smc_swingTrend
+        lineStyle = internal ? line.style_dashed : line.style_solid, labelSize = internal ? smc_internalStructureSize : smc_swingStructureSize, extraCondition = internal ? smc_internalHigh.currentLevel != smc_swingHigh.currentLevel and bullishBar : true, bullishColor = smc_styleInput == 'Monochrome' ? smc_MONO_BULLISH : internal ? smc_internalBullColorInput : smc_swingBullColorInput
+        if ta.crossover(close, p_ivot.currentLevel) and not p_ivot.crossed and extraCondition
+            tag = t_rend.bias == -1 ? 'CHoCH' : 'BOS'
+            smc_currentAlerts.internalBullishCHoCH := internal and tag == 'CHoCH', smc_currentAlerts.internalBullishBOS := internal and tag == 'BOS', smc_currentAlerts.swingBullishCHoCH := not internal and tag == 'CHoCH', smc_currentAlerts.swingBullishBOS := not internal and tag == 'BOS'
+            p_ivot.crossed := true, t_rend.bias := 1
+            displayCondition = internal ? smc_showInternalsInput and (smc_showInternalBullInput == 'All' or (smc_showInternalBullInput == 'BOS' and tag != 'CHoCH') or (smc_showInternalBullInput == 'CHoCH' and tag == 'CHoCH')) : smc_showStructureInput and (smc_showSwingBullInput == 'All' or (smc_showSwingBullInput == 'BOS' and tag != 'CHoCH') or (smc_showSwingBullInput == 'CHoCH' and tag == 'CHoCH'))
+            if displayCondition
+                smc_drawStructure(p_ivot, tag, bullishColor, lineStyle, label.style_label_down, labelSize)
+            if (internal and smc_showInternalOrderBlocksInput) or (not internal and smc_showSwingOrderBlocksInput)
+                smc_storeOrdeBlock(p_ivot, internal, 1)
+        p_ivot := internal ? smc_internalLow : smc_swingLow, extraCondition := internal ? smc_internalLow.currentLevel != smc_swingLow.currentLevel and bearishBar : true, bearishColor = smc_styleInput == 'Monochrome' ? smc_MONO_BEARISH : internal ? smc_internalBearColorInput : smc_swingBearColorInput
+        if ta.crossunder(close, p_ivot.currentLevel) and not p_ivot.crossed and extraCondition
+            tag = t_rend.bias == 1 ? 'CHoCH' : 'BOS'
+            smc_currentAlerts.internalBearishCHoCH := internal and tag == 'CHoCH', smc_currentAlerts.internalBearishBOS := internal and tag == 'BOS', smc_currentAlerts.swingBearishCHoCH := not internal and tag == 'CHoCH', smc_currentAlerts.swingBearishBOS := not internal and tag == 'BOS'
+            p_ivot.crossed := true, t_rend.bias := -1
+            displayCondition = internal ? smc_showInternalsInput and (smc_showInternalBearInput == 'All' or (smc_showInternalBearInput == 'BOS' and tag != 'CHoCH') or (smc_showInternalBearInput == 'CHoCH' and tag == 'CHoCH')) : smc_showStructureInput and (smc_showSwingBearInput == 'All' or (smc_showSwingBearInput == 'BOS' and tag != 'CHoCH') or (smc_showSwingBearInput == 'CHoCH' and tag == 'CHoCH'))
+            if displayCondition
+                smc_drawStructure(p_ivot, tag, bearishColor, lineStyle, label.style_label_up, labelSize)
+            if (internal and smc_showInternalOrderBlocksInput) or (not internal and smc_showSwingOrderBlocksInput)
+                smc_storeOrdeBlock(p_ivot, internal, -1)
+    smc_fairValueGapBox(leftTime, rightTime, topPrice, bottomPrice, boxColor) =>
+        box.new(chart.point.new(leftTime, topPrice), chart.point.new(rightTime + smc_fairValueGapsExtendInput * (time - time[1]), bottomPrice), xloc=xloc.bar_time, border_color=boxColor, bgcolor=boxColor)
+    smc_deleteFairValueGaps() =>
+        for i = smc_fairValueGaps.size() - 1 to 0
+            eachFairValueGap = smc_fairValueGaps.get(i)
+            if (low < eachFairValueGap.bottom and eachFairValueGap.bias == 1) or (high > eachFairValueGap.top and eachFairValueGap.bias == -1)
+                eachFairValueGap.topBox.delete(), eachFairValueGap.bottomBox.delete(), smc_fairValueGaps.remove(i)
+    smc_drawFairValueGaps() =>
+        [lC, lO, lT, cH, cL, cT, l2H, l2L] = request.security(syminfo.tickerid, smc_fairValueGapsTimeframeInput, [close[1], open[1], time[1], high[0], low[0], time[0], high[2], low[2]], lookahead=barmerge.lookahead_on)
+        barDeltaPercent = na(lO) or lO == 0 ? 0 : (lC - lO) / (lO * 100), newTimeframe = timeframe.change(smc_fairValueGapsTimeframeInput)
+        threshold = smc_fairValueGapsThresholdInput ? ta.cum(math.abs(newTimeframe ? barDeltaPercent : 0)) / bar_index * 2 : 0
+        bullishFairValueGap = cL > l2H and lC > l2H and barDeltaPercent > threshold and newTimeframe, bearishFairValueGap = cH < l2L and lC < l2L and -barDeltaPercent > threshold and newTimeframe
+        if bullishFairValueGap
+            smc_currentAlerts.bullishFairValueGap := true, smc_fairValueGaps.unshift(smc_fairValueGap.new(cL, l2H, 1, smc_fairValueGapBox(lT, cT, cL, math.avg(cL, l2H), smc_fairValueGapBullishColor), smc_fairValueGapBox(lT, cT, math.avg(cL, l2H), l2H, smc_fairValueGapBullishColor)))
+        if bearishFairValueGap
+            smc_currentAlerts.bearishFairValueGap := true, smc_fairValueGaps.unshift(smc_fairValueGap.new(cH, l2L, -1, smc_fairValueGapBox(lT, cT, cH, math.avg(cH, l2L), smc_fairValueGapBearishColor), smc_fairValueGapBox(lT, cT, math.avg(cH, l2L), l2L, smc_fairValueGapBearishColor)))
+    smc_drawLevels(tf, sameTf, style, levelColor) =>
+        [tL, bL, lT, rT] = request.security(syminfo.tickerid, tf, [high[1], low[1], time[1], time], lookahead=barmerge.lookahead_on)
+        parsedTop = sameTf ? high : tL, parsedBottom = sameTf ? low : bL, parsedLeftTime = sameTf ? time : lT, parsedRightTime = sameTf ? time : rT, parsedTopTime = time, parsedBottomTime = time
+        if not sameTf
+            leftIndex = smc_times.binary_search_rightmost(parsedLeftTime), rightIndex = smc_times.binary_search_rightmost(parsedRightTime)
+            timeArray = smc_times.slice(leftIndex, rightIndex), topArray = smc_highs.slice(leftIndex, rightIndex), bottomArray = smc_lows.slice(leftIndex, rightIndex)
+            if timeArray.size() > 0
+                parsedTopTime := timeArray.get(topArray.indexof(topArray.max())), parsedBottomTime := timeArray.get(bottomArray.indexof(bottomArray.min()))
+        var line topLine = line.new(na, na, na, na, xloc=xloc.bar_time, color=levelColor, style=smc_getStyle(style)), var line bottomLine = line.new(na, na, na, na, xloc=xloc.bar_time, color=levelColor, style=smc_getStyle(style))
+        var label topLabel = label.new(na, na, xloc=xloc.bar_time, text=str.format('P{0}H', tf), color=color(na), textcolor=levelColor, size=size.small, style=label.style_label_left), var label bottomLabel = label.new(na, na, xloc=xloc.bar_time, text=str.format('P{0}L', tf), color=color(na), textcolor=levelColor, size=size.small, style=label.style_label_left)
+        topLine.set_p1(chart.point.new(parsedTopTime, parsedTop)), topLine.set_p2(chart.point.new(last_bar_time + 20 * (time - time[1]), parsedTop)), topLabel.set_xy(chart.point.new(last_bar_time + 20 * (time - time[1]), parsedTop))
+        bottomLine.set_p1(chart.point.new(parsedBottomTime, parsedBottom)), bottomLine.set_p2(chart.point.new(last_bar_time + 20 * (time - time[1]), parsedBottom)), bottomLabel.set_xy(chart.point.new(last_bar_time + 20 * (time - time[1]), parsedBottom))
+    smc_updateTrailingExtremes() =>
+        smc_trailing.top := math.max(high, smc_trailing.top), smc_trailing.lastTopTime := smc_trailing.top == high ? time : smc_trailing.lastTopTime, smc_trailing.bottom := math.min(low, smc_trailing.bottom), smc_trailing.lastBottomTime := smc_trailing.bottom == low ? time : smc_trailing.lastBottomTime
+    smc_drawHighLowSwings() =>
+        var line topLine = line.new(na, na, na, na, color=smc_swingBearishColor, xloc=xloc.bar_time), var line bottomLine = line.new(na, na, na, na, color=smc_swingBullishColor, xloc=xloc.bar_time)
+        var label topLabel = label.new(na, na, color=color(na), textcolor=smc_swingBearishColor, xloc=xloc.bar_time, style=label.style_label_down, size=size.tiny), var label bottomLabel = label.new(na, na, color=color(na), textcolor=smc_swingBullishColor, xloc=xloc.bar_time, style=label.style_label_up, size=size.tiny)
+        rightTimeBar = last_bar_time + 20 * (time - time[1])
+        topLine.set_p1(chart.point.new(smc_trailing.lastTopTime, smc_trailing.top)), topLine.set_p2(chart.point.new(rightTimeBar, smc_trailing.top)), topLabel.set_xy(chart.point.new(rightTimeBar, smc_trailing.top)), topLabel.set_text(smc_swingTrend.bias == -1 ? 'Strong High' : 'Weak High')
+        bottomLine.set_p1(chart.point.new(smc_trailing.lastBottomTime, smc_trailing.bottom)), bottomLine.set_p2(chart.point.new(rightTimeBar, smc_trailing.bottom)), bottomLabel.set_xy(chart.point.new(rightTimeBar, smc_trailing.bottom)), bottomLabel.set_text(smc_swingTrend.bias == 1 ? 'Strong Low' : 'Weak Low')
+    smc_drawZone(labelLevel, labelIndex, top, bottom, tag, zoneColor, style) =>
+        var label l_abel = label.new(na, na, text=tag, color=color(na), textcolor=zoneColor, style=style, size=size.small), var box b_ox = box.new(na, na, na, na, bgcolor=color.new(zoneColor, 80), border_color=color(na), xloc=xloc.bar_time)
+        b_ox.set_top_left(chart.point.new(smc_trailing.barTime, top)), b_ox.set_bottom_right(chart.point.new(last_bar_time, bottom)), l_abel.set_xy(chart.point.new(labelIndex, labelLevel))
+    smc_drawPremiumDiscountZones() =>
+        smc_drawZone(smc_trailing.top, math.round(0.5 * (smc_trailing.barIndex + last_bar_index)), smc_trailing.top, 0.95 * smc_trailing.top + 0.05 * smc_trailing.bottom, 'Premium', smc_premiumZoneColor, label.style_label_down)
+        equilibriumLevel = math.avg(smc_trailing.top, smc_trailing.bottom)
+        smc_drawZone(equilibriumLevel, last_bar_index, 0.525 * smc_trailing.top + 0.475 * smc_trailing.bottom, 0.525 * smc_trailing.bottom + 0.475 * smc_trailing.top, 'Equilibrium', smc_equilibriumZoneColorInput, label.style_label_left)
+        smc_drawZone(smc_trailing.bottom, math.round(0.5 * (smc_trailing.barIndex + last_bar_index)), 0.95 * smc_trailing.bottom + 0.05 * smc_trailing.top, smc_trailing.bottom, 'Discount', smc_discountZoneColor, label.style_label_up)
+    smc_parsedOpen = smc_showTrendInput ? open : na, smc_candleColor = smc_internalTrend.bias == 1 ? smc_swingBullishColor : smc_swingBearishColor
+    plotcandle(smc_parsedOpen, high, low, close, color=smc_candleColor, wickcolor=smc_candleColor, bordercolor=smc_candleColor)
+    if smc_showHighLowSwingsInput or smc_showPremiumDiscountZonesInput
+        smc_updateTrailingExtremes()
+        if smc_showHighLowSwingsInput
+            smc_drawHighLowSwings()
+        if smc_showPremiumDiscountZonesInput
+            smc_drawPremiumDiscountZones()
+    if smc_showFairValueGapsInput
+        smc_deleteFairValueGaps()
+    smc_getCurrentStructure(smc_swingsLengthInput, false, false), smc_getCurrentStructure(5, false, true)
+    if smc_showEqualHighsLowsInput
+        smc_getCurrentStructure(smc_equalHighsLowsLengthInput, true, false)
+    if smc_showInternalsInput or smc_showInternalOrderBlocksInput or smc_showTrendInput
+        smc_displayStructure(true)
+    if smc_showStructureInput or smc_showSwingOrderBlocksInput or smc_showHighLowSwingsInput
+        smc_displayStructure(false)
+    if smc_showInternalOrderBlocksInput
+        smc_deleteOrderBlocks(true)
+    if smc_showSwingOrderBlocksInput
+        smc_deleteOrderBlocks(false)
+    if smc_showFairValueGapsInput
+        smc_drawFairValueGaps()
+    if barstate.islastconfirmedhistory or barstate.islast
+        if smc_showInternalOrderBlocksInput
+            smc_drawOrderBlocks(true)
+        if smc_showSwingOrderBlocksInput
+            smc_drawOrderBlocks(false) // 'false' is default for internal=false
+    smc_lastBarIndex := smc_currentBarIndex, smc_currentBarIndex := bar_index, smc_newBar = smc_currentBarIndex != smc_lastBarIndex
+    if barstate.islastconfirmedhistory or (barstate.isrealtime and smc_newBar)
+        if smc_showDailyLevelsInput and not smc_higherTimeframe('D')
+            smc_drawLevels('D', timeframe.isdaily, smc_dailyLevelsStyleInput, smc_dailyLevelsColorInput)
+        if smc_showWeeklyLevelsInput and not smc_higherTimeframe('W')
+            smc_drawLevels('W', timeframe.isweekly, smc_weeklyLevelsStyleInput, smc_weeklyLevelsColorInput)
+        if smc_showMonthlyLevelsInput and not smc_higherTimeframe('M')
+            smc_drawLevels('M', timeframe.ismonthly, smc_monthlyLevelsStyleInput, smc_monthlyLevelsColorInput)
+    if smc_currentAlerts.internalBullishBOS
+        alert('SMC: Internal Bullish BOS formed', alert.freq_once_per_bar)
+    if smc_currentAlerts.internalBullishCHoCH
+        alert('SMC: Internal Bullish CHoCH formed', alert.freq_once_per_bar)
+    if smc_currentAlerts.swingBullishBOS
+        alert('SMC: Bullish BOS formed', alert.freq_once_per_bar)
+    if smc_currentAlerts.swingBullishCHoCH
+        alert('SMC: Bullish CHoCH formed', alert.freq_once_per_bar)
+    if smc_currentAlerts.internalBearishOrderBlock
+        alert('SMC: Price broke bearish internal OB', alert.freq_once_per_bar)
+    if smc_currentAlerts.equalHighs
+        alert('SMC: Equal highs detected', alert.freq_once_per_bar)
+    if smc_currentAlerts.bullishFairValueGap
+        alert('SMC: Bullish FVG formed', alert.freq_once_per_bar)
+
+
+// =============================================================================
+//                      5. SESSION PROFILE MODULE
+// =============================================================================
+if (show_sp)
+    sp_group = "Session Profile Settings"
+    sp_sessionType = input.string('Daily', 'Session Type', options=['Tokyo','London','New York','Daily','Weekly', 'Monthly', 'Quarterly', 'Yearly'], group=sp_group)
+    sp_display_group = sp_group + " | Display"
+    sp_showProf = input.bool(true, 'Show Volume Profile', group=sp_display_group)
+    sp_showSbox = input.bool(true, 'Show Session Box', group=sp_display_group)
+    sp_showPoc = input.bool(true, 'Show POC', group=sp_display_group)
+    sp_showVA = input.bool(true, 'Show VAH and VAL', group=sp_display_group)
+    sp_showVAb = input.bool(false, 'Show Value Area Box', group=sp_display_group)
+    sp_showCur = input.bool(true, 'Show Live Zone', group=sp_display_group)
+    sp_showLabels = input.bool(true, 'Show Session Lables', group=sp_display_group)
+    sp_showFx = input.bool(false, 'Show Forex Sessions (no profile)', group=sp_display_group)
+    sp_vp_settings_group = sp_group + " | Volume Profile Settings"
+    sp_resolution = input.int(30, 'Resolution', minval=5, tooltip='The higher the value, the more refined of a profile, but less profiles shown on chart', group=sp_vp_settings_group)
+    sp_VAwid = input.int(70, 'Value Area Volume %', minval=1, maxval=100, group=sp_vp_settings_group)
+    sp_dispMode = input.string('Mode 2', 'Bar Mode', ['Mode 1', 'Mode 2', 'Mode 3'], group=sp_vp_settings_group)
+    sp_volType = input.string('Volume', 'Profile Data Type', options=['Volume', 'Open Interest'], group=sp_vp_settings_group)
+    sp_smoothVol = input.bool(false, 'Smooth Volume Data', tooltip='Useful for assets that have very large spikes in volume over large bars - helps create better profiles', group=sp_vp_settings_group)
+    sp_dataTf = ''
+    sp_appearance_group = sp_group + " | Appearance"
+    sp_bullCol = input.color(color.rgb(76, 175, 79, 50), 'Up Volume', group=sp_appearance_group)
+    sp_bearCol = input.color(color.rgb(255, 82, 82, 50), 'Down Volume', group=sp_appearance_group)
+    sp_VAbCol = input.color(color.rgb(107, 159, 255, 90), 'Value Area Box', group=sp_appearance_group )
+    sp_pocCol = input.color(color.red, 'POC', inline='p', group=sp_appearance_group)
+    sp_pocWid = input.int(1, 'Thickness', inline='p', group=sp_appearance_group)
+    sp_vahCol = input.color(color.aqua, 'VAH', inline='h', group=sp_appearance_group)
+    sp_vahWid = input.int(1, 'Thickness', inline='h', group=sp_appearance_group)
+    sp_valCol = input.color(color.aqua, 'VAL', inline='l', group=sp_appearance_group)
+    sp_valWid = input.int(1, 'Thickness', inline='l', group=sp_appearance_group)
+    sp_boxBg = input.color(color.rgb(255, 153, 0, 100), 'Box', inline='m', group=sp_appearance_group)
+    sp_boxWid = input.int(1, 'Thickness', inline='m', group=sp_appearance_group)
+
+    var int sp_zoneStart = 0, var int sp_tokyoStart = 0, var int sp_londonStart = 0, var int sp_nyStart = 0
+    int sp_lookback = bar_index - sp_zoneStart
+    var bool sp_activeZone = false
+    var sp_vpGreen = array.new_float(sp_resolution, 0), var sp_vpRed = array.new_float(sp_resolution, 0), var sp_zoneBounds = array.new_float(sp_resolution, 0)
+    var array<float> sp_ltfOpen = array.new<float>(0), var array<float> sp_ltfClose = array.new<float>(0), var array<float> sp_ltfHigh = array.new<float>(0), var array<float> sp_ltfLow = array.new<float>(0), var array<float> sp_ltfVolume = array.new<float>(0)
+    sp_userSymbol = syminfo.prefix + ":" + syminfo.ticker, sp_openInterestTicker = str.format("{0}_OI", sp_userSymbol), sp_timeframe = syminfo.type == "futures" and timeframe.isintraday ? "1D" : timeframe.period
+    [sp_deltaOi] = request.security(sp_openInterestTicker, sp_timeframe, close-close[1], ignore_invalid_symbol = true)
+    
+    sp_vol() =>
+        out = sp_smoothVol ? ta.ema(volume, 5) : volume
+        if sp_volType == 'Open Interest'
+            out := sp_deltaOi
+        out
+    
+    [sp_dO, sp_dC, sp_dH, sp_dL, sp_dV] = request.security_lower_tf(syminfo.tickerid, sp_dataTf, [open, close, high, low, sp_vol()])
+
+    sp_resetProfile(enable) =>
+        if enable
+            sp_vpGreen.fill(0), sp_vpRed.fill(0), sp_ltfOpen.clear(), sp_ltfHigh.clear(), sp_ltfLow.clear(), sp_ltfClose.clear(), sp_ltfVolume.clear()
+    
+    sp_profHigh = ta.highest(high, sp_lookback+1)[1]
+    sp_profLow = ta.lowest(low, sp_lookback+1)[1]
+    
+    sp_profileAdd(o, h, l, c, v, g, w) =>
+        for i = 0 to sp_vpGreen.size() - 1
+            zoneTop = sp_zoneBounds.get(i), zoneBot = zoneTop - g, body_top = math.max(c, o), body_bot = math.min(c, o), itsgreen = c >= o, topwick = h - body_top, bottomwick = body_bot - l, body = body_top - body_bot
+            bodyvol = body == 0 ? 0 : body * v / (2 * topwick + 2 * bottomwick + body), topwickvol = topwick == 0 ? 0 : 2 * topwick * v / (2 * topwick + 2 * bottomwick + body), bottomwickvol = bottomwick == 0 ? 0 : 2 * bottomwick * v / (2 * topwick + 2 * bottomwick + body)
+            if sp_volType == 'Volume'
+                sp_vpGreen.set(i, sp_vpGreen.get(i) + (itsgreen ? sp_get_vol(zoneBot, zoneTop, body_bot, body_top, body, bodyvol) : 0) + sp_get_vol(zoneBot, zoneTop, body_top, h, topwick, topwickvol) / 2 + sp_get_vol(zoneBot, zoneTop, l, body_bot, bottomwick, bottomwickvol) / 2)
+                sp_vpRed.set(i, sp_vpRed.get(i) + (itsgreen ? 0 : sp_get_vol(zoneBot, zoneTop, body_bot, body_top, body, bodyvol)) + sp_get_vol(zoneBot, zoneTop, body_top, h, topwick, topwickvol) / 2 + sp_get_vol(zoneBot, zoneTop, l, body_bot, bottomwick, bottomwickvol) / 2)
+            else if sp_volType == 'Open Interest'
+                if v > 0
+                    sp_vpGreen.set(i, sp_vpGreen.get(i) + sp_get_vol(zoneBot, zoneTop, body_bot, body_top, body, v))
+                if v < 0
+                    sp_vpRed.set(i, sp_vpRed.get(i) + sp_get_vol(zoneBot, zoneTop, body_bot, body_top, body, -v))
+
+    sp_calcSession(update) =>
+        sp_vpGreen.fill(0), sp_vpRed.fill(0)
+        if bar_index > sp_lookback and update
+            gap = (sp_profHigh - sp_profLow) / sp_resolution
+            for i = 0 to sp_resolution - 1
+                sp_zoneBounds.set(i, sp_profHigh - gap * i)
+            if sp_ltfOpen.size() > 0
+                for j = 0 to sp_ltfOpen.size() - 1
+                    sp_profileAdd(sp_ltfOpen.get(j), sp_ltfHigh.get(j), sp_ltfLow.get(j), sp_ltfClose.get(j), sp_ltfVolume.get(j), gap, 1)
+    
+    sp_pocLevel() =>
+        float maxVol = 0
+        int levelInd = 0
+        for i = 0 to sp_vpRed.size() - 1
+            if sp_vpRed.get(i) + sp_vpGreen.get(i) > maxVol
+                maxVol := sp_vpRed.get(i) + sp_vpGreen.get(i), levelInd := i
+        float outLevel = na
+        if levelInd != sp_vpRed.size() - 1
+            outLevel := sp_zoneBounds.get(levelInd) - (sp_zoneBounds.get(levelInd) - sp_zoneBounds.get(levelInd+1)) / 2
+        outLevel
+
+    sp_valueLevels(poc) =>
+        float gap = (sp_profHigh - sp_profLow) / sp_resolution, float volSum = sp_vpRed.sum() + sp_vpGreen.sum(), float volCnt = 0, float vah = sp_profHigh, float val = sp_profLow
+        int pocInd = 0
+        for i = 0 to sp_zoneBounds.size()-2
+            if sp_zoneBounds.get(i) >= poc and sp_zoneBounds.get(i + 1) < poc
+                pocInd := i
+        volCnt += (sp_vpRed.get(pocInd) + sp_vpGreen.get(pocInd))
+        for i = 1 to sp_vpRed.size()
+            if pocInd + i >= 0 and pocInd + i < sp_vpRed.size()
+                volCnt += (sp_vpRed.get(pocInd + i) + sp_vpGreen.get(pocInd + i))
+                if volCnt >= volSum * (sp_VAwid/100)
+                    break
+                else
+                    val := sp_zoneBounds.get(pocInd + i) - gap
+            if pocInd - i >= 0 and pocInd - i < sp_vpRed.size()
+                volCnt += (sp_vpRed.get(pocInd - i) + sp_vpGreen.get(pocInd - i))
+                if volCnt >= volSum * (sp_VAwid/100)
+                    break
+                else
+                    vah := sp_zoneBounds.get(pocInd - i)
+        [val, vah]
+
+    sp_drawNewZone(update) =>
+        if bar_index > sp_lookback and update and sp_vpGreen.sum() + sp_vpRed.sum() > 0
+            gap = (sp_profHigh - sp_profLow) / sp_resolution, float leftMax = bar_index[sp_lookback], float rightMax = bar_index[int(sp_lookback / 1.4)], float rightMaxVol = sp_vpGreen.max()+sp_vpRed.max(), float buffer = gap / 10
+            if sp_showLabels
+                label.new(math.round((bar_index - 1 + leftMax)/2), sp_profHigh, sp_sessionType, color=color.rgb(0,0,0,100), textcolor=chart.fg_color)
+            if sp_showProf and not na(rightMaxVol) and rightMaxVol > 0
+                for i = 0 to sp_vpRed.size() - 1
+                    greenEnd = leftMax + (rightMax - leftMax) * (sp_vpGreen.get(i) / rightMaxVol), redEnd = greenEnd + (rightMax - leftMax) * (sp_vpRed.get(i) / rightMaxVol)
+                    if sp_dispMode == 'Mode 2'
+                        box.new(int(leftMax), sp_zoneBounds.get(i) - buffer, int(greenEnd), sp_zoneBounds.get(i) - gap + buffer, bgcolor=sp_bullCol, border_width=0), box.new(int(greenEnd), sp_zoneBounds.get(i) - buffer, int(redEnd), sp_zoneBounds.get(i) - gap + buffer, bgcolor=sp_bearCol, border_width=0)
+                    else if sp_dispMode == 'Mode 1'
+                        box.new(int(leftMax), sp_zoneBounds.get(i) - buffer, int(greenEnd), sp_zoneBounds.get(i) - gap + buffer, bgcolor=sp_bullCol, border_width=0)
+                    else
+                        box.new(int(leftMax), sp_zoneBounds.get(i) - buffer, int(greenEnd), sp_zoneBounds.get(i) - gap + buffer, bgcolor=sp_bullCol, border_width=0), box.new(int(leftMax)-int(redEnd)+int(greenEnd), sp_zoneBounds.get(i) - buffer, int(leftMax), sp_zoneBounds.get(i) - gap + buffer, bgcolor=sp_bearCol, border_width=0)
+            if sp_showSbox
+                box.new(int(leftMax), sp_profHigh, bar_index-1, sp_profLow, color = chart.fg_color, width = sp_boxWid, style = line.style_dashed, bgcolor=sp_boxBg)
+            poc = sp_pocLevel(), [val, vah] = sp_valueLevels(poc)
+            if sp_showPoc
+                line.new(int(leftMax), poc, bar_index-1, poc, color=sp_pocCol, width=sp_pocWid)
+            if sp_showVA
+                line.new(int(leftMax), vah, bar_index-1, vah, color=sp_vahCol, width=sp_vahWid), line.new(int(leftMax), val, bar_index-1, val, color=sp_valCol, width=sp_valWid)
+            if sp_showVAb
+                box.new(int(leftMax), vah, bar_index-1, val, border_color=color.rgb(54, 58, 69, 100), bgcolor=sp_VAbCol)
+
+    sp_drawCurZone(update, delete) =>
+        var line pocLine = na, var line vahLine = na, var line valLine = na, var box outBox = na, var label sessionLab = na
+        var array<box> redBoxes = array.new_box(sp_vpRed.size(), na), var array<box> greenBoxes = array.new_box(sp_vpRed.size(), na)
+        if bar_index > sp_lookback and update and sp_vpGreen.sum() + sp_vpRed.sum() > 0
+            if not na(pocLine)
+                pocLine.delete()
+            if not na(vahLine)
+                vahLine.delete()
+            if not na(valLine)
+                valLine.delete()
+            if not na(outBox)
+                outBox.delete()
+            if not na(sessionLab)
+                sessionLab.delete()
+            for i = 0 to redBoxes.size() - 1
+                if not na(redBoxes.get(i))
+                    redBoxes.get(i).delete()
+                if not na(greenBoxes.get(i))
+                    greenBoxes.get(i).delete()
+            gap = (sp_profHigh - sp_profLow) / sp_resolution, float leftMax = bar_index[sp_lookback], float rightMax = bar_index[int(sp_lookback / 1.4)], float rightMaxVol = sp_vpGreen.max()+sp_vpRed.max(), float buffer = gap / 10
+            if sp_showLabels
+                sessionLab := label.new(math.round((bar_index - 1 + leftMax)/2), sp_profHigh, sp_sessionType, color=color.rgb(0,0,0,100), textcolor=chart.fg_color)
+            if sp_showProf and not na(rightMaxVol) and rightMaxVol > 0
+                for i = 0 to sp_vpRed.size() - 1
+                    greenEnd = leftMax + (rightMax - leftMax) * (sp_vpGreen.get(i) / rightMaxVol), redEnd = greenEnd + (rightMax - leftMax) * (sp_vpRed.get(i) / rightMaxVol)
+                    if sp_dispMode == 'Mode 2'
+                        greenBoxes.set(i, box.new(int(leftMax), sp_zoneBounds.get(i) - buffer, int(greenEnd), sp_zoneBounds.get(i) - gap + buffer, bgcolor=sp_bullCol, border_width=0)), redBoxes.set(i, box.new(int(greenEnd), sp_zoneBounds.get(i) - buffer, int(redEnd), sp_zoneBounds.get(i) - gap + buffer, bgcolor=sp_bearCol, border_width=0))
+                    else if sp_dispMode == 'Mode 1'
+                        greenBoxes.set(i, box.new(int(leftMax), sp_zoneBounds.get(i) - buffer, int(greenEnd), sp_zoneBounds.get(i) - gap + buffer, bgcolor=sp_bullCol, border_width=0))
+                    else
+                        greenBoxes.set(i, box.new(int(leftMax), sp_zoneBounds.get(i) - buffer, int(greenEnd), sp_zoneBounds.get(i) - gap + buffer, bgcolor=sp_bullCol, border_width=0)), redBoxes.set(i, box.new(int(leftMax)-int(redEnd)+int(greenEnd), sp_zoneBounds.get(i) - buffer, int(leftMax), sp_zoneBounds.get(i) - gap + buffer, bgcolor=sp_bearCol, border_width=0))
+            if sp_showSbox
+                outBox := box.new(int(leftMax), sp_profHigh, bar_index-1, sp_profLow, color = chart.fg_color, width = sp_boxWid, style = line.style_dashed, bgcolor=sp_boxBg)
+            poc = sp_pocLevel(), [val, vah] = sp_valueLevels(poc)
+            if sp_showPoc
+                pocLine.delete(), pocLine := line.new(int(leftMax), poc, bar_index-1, poc, color=sp_pocCol, width=sp_pocWid)
+            if sp_showVA
+                vahLine.delete(), valLine.delete(), vahLine := line.new(int(leftMax), vah, bar_index-1, vah, color=sp_vahCol, width=sp_vahWid), valLine := line.new(int(leftMax), val, bar_index-1, val, color=sp_valCol, width=sp_valWid)
+            if sp_showVAb
+                box.new(int(leftMax), vah, bar_index-1, val, border_color=color.rgb(54, 58, 69, 100), bgcolor=sp_VAbCol)
+        if delete
+            if not na(outBox)
+                outBox.delete()
+            if not na(pocLine)
+                pocLine.delete()
+            if not na(vahLine)
+                vahLine.delete()
+            if not na(valLine)
+                valLine.delete()
+            for i = 0 to greenBoxes.size()-1
+                if not na(greenBoxes.get(i))
+                    greenBoxes.get(i).delete()
+            for i = 0 to redBoxes.size()-1
+                if not na(redBoxes.get(i))
+                    redBoxes.get(i).delete()
+    
+    sp_drawForexBox(startBar, title, top, bottom) =>
+        box.new(int(startBar), top, bar_index-1, bottom, color = chart.fg_color, width = sp_boxWid, style = line.style_dashed, bgcolor=sp_boxBg)
+        if sp_showLabels
+            label.new(math.round((bar_index - 1 + startBar)/2), top, title, color=color.rgb(0,0,0,100), textcolor=chart.fg_color)
+    
+    sp_updateIntra(o, h, l, c, v) =>
+        if not na(o)
+            sp_ltfOpen.push(o), sp_ltfHigh.push(h), sp_ltfLow.push(l), sp_ltfClose.push(c), sp_ltfVolume.push(v)
+
+    sp_newDaily = dayofweek != dayofweek[1], sp_newWeekly = weekofyear != weekofyear[1], sp_newMonthly = month != month[1] and dayofmonth < dayofmonth[1], sp_newYearly = year != year[1], sp_newQuarterly = month != month[1] and (month - 1) % 3 == 0
+    sp_utcHour = hour(time(timeframe.period, '0000-2400', 'GMT'), 'GMT')
+    sp_newTokyo = sp_utcHour == 0 and sp_utcHour[1] == 23, sp_endTokyo = sp_utcHour >= 9 and sp_utcHour[1] < 9
+    sp_newLondon = sp_utcHour >= 7 and sp_utcHour[1] < 7, sp_endLondon = sp_utcHour >= 16 and sp_utcHour[1] < 16
+    sp_newNewYork = sp_utcHour >= 13 and sp_utcHour[1] < 13, sp_endNewYork = sp_utcHour >= 22 and sp_utcHour[1] < 22
+    sp_newSession = switch sp_sessionType
+        'Tokyo' => sp_newTokyo, 'London' => sp_newLondon, 'New York' => sp_newNewYork, 'Daily' => sp_newDaily, 'Weekly' => sp_newWeekly, 'Monthly' => sp_newMonthly, 'Yearly' => sp_newYearly, 'Quarterly' => sp_newQuarterly, => sp_newDaily
+    sp_zoneEnd = switch sp_sessionType
+        'Tokyo' => sp_endTokyo, 'London' => sp_endLondon, 'New York' => sp_endNewYork, 'Daily' => sp_newDaily, 'Weekly' => sp_newWeekly, 'Monthly' => sp_newMonthly, 'Yearly' => sp_newYearly, 'Quarterly' => sp_newQuarterly, => sp_newDaily
+    
+    sp_calcSession(sp_zoneEnd or (barstate.islast and sp_showCur))
+    sp_drawNewZone(sp_zoneEnd)
+    sp_drawCurZone(barstate.islast and not sp_zoneEnd and sp_showCur and sp_activeZone, sp_zoneEnd)
+    sp_resetProfile(sp_newSession)
+    sp_updateIntra(sp_dO, sp_dH, sp_dL, sp_dC, sp_dV)
+    if sp_zoneEnd
+        sp_activeZone := false
+    if sp_newSession
+        sp_zoneStart := bar_index, sp_activeZone := true
+    if sp_newLondon
+        sp_londonStart := bar_index
+    if sp_newTokyo
+        sp_tokyoStart := bar_index
+    if sp_newNewYork
+        sp_nyStart := bar_index
+    sp_londonHigh = ta.highest(high, bar_index-sp_londonStart+1), sp_tokyoHigh = ta.highest(high, bar_index-sp_tokyoStart+1), sp_nyHigh = ta.highest(high, bar_index-sp_nyStart+1)
+    sp_londonLow = ta.lowest(low, bar_index-sp_londonStart+1), sp_tokyoLow = ta.lowest(low, bar_index-sp_tokyoStart+1), sp_nyLow = ta.lowest(low, bar_index-sp_nyStart+1)
+    if sp_endLondon and sp_showFx
+        sp_drawForexBox(sp_londonStart, 'London', sp_londonHigh, sp_londonLow)
+    if sp_endNewYork and sp_showFx
+        sp_drawForexBox(sp_nyStart, 'New York', sp_nyHigh, sp_nyLow)
+    if sp_endTokyo and sp_showFx
+        sp_drawForexBox(sp_tokyoStart, 'Tokyo', sp_tokyoHigh, sp_tokyoLow)
