@@ -32,8 +32,9 @@ vp_f_contrastColor(color bgColor) =>
     lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255
     lum > 0.5 ? color.black : color.white
 
-vp_ltf(int multiplier) =>
-    timeframe.from_seconds(math.max(vp_MIN_TIMEFRAME_IN_SECONDS, math.round(timeframe.in_seconds() / multiplier)))
+string vp_ltf(int multiplier) =>
+    int seconds = int(math.max(vp_MIN_TIMEFRAME_IN_SECONDS, math.round(timeframe.in_seconds() / multiplier)))
+    timeframe.from_seconds(seconds)
 
 vp_maxIndex(array<float> a) =>
     float maxVal = na
@@ -348,11 +349,11 @@ if (show_vp)
     if barstate.isfirst
         vp_instance.init()
     
-    simple string vp_ltf1  = timeframe.period
-    simple string vp_ltf2  = vp_ltf(2)
-    simple string vp_ltf4  = vp_ltf(4)
-    simple string vp_ltf8  = vp_ltf(8)
-    simple string vp_ltf16 = vp_ltf(16)
+    string vp_ltf1  = timeframe.period
+    string vp_ltf2  = vp_ltf(2)
+    string vp_ltf4  = vp_ltf(4)
+    string vp_ltf8  = vp_ltf(8)
+    string vp_ltf16 = vp_ltf(16)
     
     bool vp_canProcess = time >= vp_START_TIME and (last_bar_index - bar_index) < vp_MAX_LTF_BARS
     
