@@ -1,5 +1,5 @@
 //@version=6
-// Converted for Pine Script v6 compatibility.
+
 indicator("All-in-One Analysis Tool", shorttitle="AIO Tool", overlay=true)
 
 // =============================================================================
