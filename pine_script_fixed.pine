@@ -466,8 +466,18 @@ if (show_smc)
         if smc_showInternalOrderBlocksInput
             for i = 1 to smc_internalOrderBlocksSizeInput
                 smc_internalOrderBlocksBoxes.push(box.new(na, na, na, na, xloc=xloc.bar_time, extend=extend.right))
-    smc_bearishOrderBlockMitigationSource = smc_orderBlockMitigationInput == 'Close' ? close : high, smc_bullishOrderBlockMitigationSource = smc_orderBlockMitigationInput == 'Close' ? close : low, smc_atrMeasure = ta.atr(200), smc_volatilityMeasure = smc_orderBlockFilterInput == 'Atr' ? smc_atrMeasure : ta.cum(ta.tr) / bar_index, smc_highVolatilityBar = (high - low) >= (2 * smc_volatilityMeasure), smc_parsedHigh = smc_highVolatilityBar ? low : high, smc_parsedLow = smc_highVolatilityBar ? high : low
-    smc_parsedHighs.push(smc_parsedHigh), smc_parsedLows.push(smc_parsedLow), smc_highs.push(high), smc_lows.push(low), smc_times.push(time)
+    smc_bearishOrderBlockMitigationSource = smc_orderBlockMitigationInput == 'Close' ? close : high
+    smc_bullishOrderBlockMitigationSource = smc_orderBlockMitigationInput == 'Close' ? close : low
+    smc_atrMeasure = ta.atr(200)
+    smc_volatilityMeasure = smc_orderBlockFilterInput == 'Atr' ? smc_atrMeasure : ta.cum(ta.tr) / bar_index
+    smc_highVolatilityBar = (high - low) >= (2 * smc_volatilityMeasure)
+    smc_parsedHigh = smc_highVolatilityBar ? low : high
+    smc_parsedLow = smc_highVolatilityBar ? high : low
+    smc_parsedHighs.push(smc_parsedHigh)
+    smc_parsedLows.push(smc_parsedLow)
+    smc_highs.push(high)
+    smc_lows.push(low)
+    smc_times.push(time)
     
     smc_drawLabel(labelTime, labelPrice, tag, labelColor, labelStyle) =>
         var label l_abel = na
