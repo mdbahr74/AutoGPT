@@ -176,19 +176,51 @@ method update(vp_VP this, int vp_NUM_ROWS, int vp_MAX_WIDTH, int vp_HEIGHT_PERCE
 
 // SMC Module Types & Functions
 type smc_alerts
-    bool internalBullishBOS, bool internalBearishBOS, bool internalBullishCHoCH, bool internalBearishCHoCH, bool swingBullishBOS, bool swingBearishBOS, bool swingBullishCHoCH, bool swingBearishCHoCH, bool internalBullishOrderBlock, bool internalBearishOrderBlock, bool swingBullishOrderBlock, bool swingBearishOrderBlock, bool equalHighs, bool equalLows, bool bullishFairValueGap, bool bearishFairValueGap
+    bool internalBullishBOS
+    bool internalBearishBOS
+    bool internalBullishCHoCH
+    bool internalBearishCHoCH
+    bool swingBullishBOS
+    bool swingBearishBOS
+    bool swingBullishCHoCH
+    bool swingBearishCHoCH
+    bool internalBullishOrderBlock
+    bool internalBearishOrderBlock
+    bool swingBullishOrderBlock
+    bool swingBearishOrderBlock
+    bool equalHighs
+    bool equalLows
+    bool bullishFairValueGap
+    bool bearishFairValueGap
 type smc_trailingExtremes
-    float top, float bottom, int barTime, int barIndex, int lastTopTime, int lastBottomTime
+    float top
+    float bottom
+    int barTime
+    int barIndex
+    int lastTopTime
+    int lastBottomTime
 type smc_fairValueGap
-    float top, float bottom, int bias, box topBox, box bottomBox
+    float top
+    float bottom
+    int bias
+    box topBox
+    box bottomBox
 type smc_trend
     int bias
 type smc_equalDisplay
-    line l_ine = na, label l_abel = na
+    line l_ine = na
+    label l_abel = na
 type smc_pivot
-    float currentLevel, float lastLevel, bool crossed, int barTime = time, int barIndex = bar_index
+    float currentLevel
+    float lastLevel
+    bool crossed
+    int barTime = time
+    int barIndex = bar_index
 type smc_orderBlock
-    float barHigh, float barLow, int barTime, int bias
+    float barHigh
+    float barLow
+    int barTime
+    int bias
 
 smc_leg(size) =>
     var leg = 0
