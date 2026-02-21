@@ -262,49 +262,48 @@ input.string("", "─────────────────", group = 
 // =============================================================================
 //                      2. MOVING AVERAGES & VWAP MODULE
 // =============================================================================
-if (show_mas_vwap)
-    string mav_group = "Moving Averages & VWAP"
-    string mav_g1 = mav_group + " | MA 1"
-    bool mav_ma1_enabled = input.bool(true, "Enable MA1", group=mav_g1, inline="MA1")
-    string mav_ma1_type = input.string("SMA", "Type", options=["SMA", "EMA", "WMA", "RMA", "HMA"], group=mav_g1, inline="MA1")
-    int mav_ma1_length = input.int(9, "Length", minval=1, group=mav_g1, inline="MA1")
-    color mav_ma1_color = input.color(color.red, "Color", group=mav_g1, inline="MA1")
-    string mav_g2 = mav_group + " | MA 2"
-    bool mav_ma2_enabled = input.bool(true, "Enable MA2", group=mav_g2, inline="MA2")
-    string mav_ma2_type = input.string("EMA", "Type", options=["SMA", "EMA", "WMA", "RMA", "HMA"], group=mav_g2, inline="MA2")
-    int mav_ma2_length = input.int(21, "Length", minval=1, group=mav_g2, inline="MA2")
-    color mav_ma2_color = input.color(color.blue, "Color", group=mav_g2, inline="MA2")
-    string mav_g3 = mav_group + " | MA 3"
-    bool mav_ma3_enabled = input.bool(true, "Enable MA3", group=mav_g3, inline="MA3")
-    string mav_ma3_type = input.string("SMA", "Type", options=["SMA", "EMA", "WMA", "RMA", "HMA"], group=mav_g3, inline="MA3")
-    int mav_ma3_length = input.int(50, "Length", minval=1, group=mav_g3, inline="MA3")
-    color mav_ma3_color = input.color(color.green, "Color", group=mav_g3, inline="MA3")
-    string mav_g4 = mav_group + " | MA 4"
-    bool mav_ma4_enabled = input.bool(true, "Enable MA4", group=mav_g4, inline="MA4")
-    string mav_ma4_type = input.string("SMA", "Type", options=["SMA", "EMA", "WMA", "RMA", "HMA"], group=mav_g4, inline="MA4")
-    int mav_ma4_length = input.int(100, "Length", minval=1, group=mav_g4, inline="MA4")
-    color mav_ma4_color = input.color(color.orange, "Color", group=mav_g4, inline="MA4")
-    string mav_g5 = mav_group + " | MA 5"
-    bool mav_ma5_enabled = input.bool(true, "Enable MA5", group=mav_g5, inline="MA5")
-    string mav_ma5_type = input.string("SMA", "Type", options=["SMA", "EMA", "WMA", "RMA", "HMA"], group=mav_g5, inline="MA5")
-    int mav_ma5_length = input.int(200, "Length", minval=1, group=mav_g5, inline="MA5")
-    color mav_ma5_color = input.color(color.purple, "Color", group=mav_g5, inline="MA5")
-    string mav_g6 = mav_group + " | VWAP"
-    bool mav_vwap_enabled = input.bool(true, "Enable VWAP", group=mav_g6)
-    color mav_vwap_color = input.color(color.white, "Color", group=mav_g6)
+string mav_group = "Moving Averages & VWAP"
+string mav_g1 = mav_group + " | MA 1"
+bool mav_ma1_enabled = input.bool(true, "Enable MA1", group=mav_g1, inline="MA1")
+string mav_ma1_type = input.string("SMA", "Type", options=["SMA", "EMA", "WMA", "RMA", "HMA"], group=mav_g1, inline="MA1")
+int mav_ma1_length = input.int(9, "Length", minval=1, group=mav_g1, inline="MA1")
+color mav_ma1_color = input.color(color.red, "Color", group=mav_g1, inline="MA1")
+string mav_g2 = mav_group + " | MA 2"
+bool mav_ma2_enabled = input.bool(true, "Enable MA2", group=mav_g2, inline="MA2")
+string mav_ma2_type = input.string("EMA", "Type", options=["SMA", "EMA", "WMA", "RMA", "HMA"], group=mav_g2, inline="MA2")
+int mav_ma2_length = input.int(21, "Length", minval=1, group=mav_g2, inline="MA2")
+color mav_ma2_color = input.color(color.blue, "Color", group=mav_g2, inline="MA2")
+string mav_g3 = mav_group + " | MA 3"
+bool mav_ma3_enabled = input.bool(true, "Enable MA3", group=mav_g3, inline="MA3")
+string mav_ma3_type = input.string("SMA", "Type", options=["SMA", "EMA", "WMA", "RMA", "HMA"], group=mav_g3, inline="MA3")
+int mav_ma3_length = input.int(50, "Length", minval=1, group=mav_g3, inline="MA3")
+color mav_ma3_color = input.color(color.green, "Color", group=mav_g3, inline="MA3")
+string mav_g4 = mav_group + " | MA 4"
+bool mav_ma4_enabled = input.bool(true, "Enable MA4", group=mav_g4, inline="MA4")
+string mav_ma4_type = input.string("SMA", "Type", options=["SMA", "EMA", "WMA", "RMA", "HMA"], group=mav_g4, inline="MA4")
+int mav_ma4_length = input.int(100, "Length", minval=1, group=mav_g4, inline="MA4")
+color mav_ma4_color = input.color(color.orange, "Color", group=mav_g4, inline="MA4")
+string mav_g5 = mav_group + " | MA 5"
+bool mav_ma5_enabled = input.bool(true, "Enable MA5", group=mav_g5, inline="MA5")
+string mav_ma5_type = input.string("SMA", "Type", options=["SMA", "EMA", "WMA", "RMA", "HMA"], group=mav_g5, inline="MA5")
+int mav_ma5_length = input.int(200, "Length", minval=1, group=mav_g5, inline="MA5")
+color mav_ma5_color = input.color(color.purple, "Color", group=mav_g5, inline="MA5")
+string mav_g6 = mav_group + " | VWAP"
+bool mav_vwap_enabled = input.bool(true, "Enable VWAP", group=mav_g6)
+color mav_vwap_color = input.color(color.white, "Color", group=mav_g6)
 
-    mav_ma1 = f_get_ma(close, mav_ma1_length, mav_ma1_type)
-    mav_ma2 = f_get_ma(close, mav_ma2_length, mav_ma2_type)
-    mav_ma3 = f_get_ma(close, mav_ma3_length, mav_ma3_type)
-    mav_ma4 = f_get_ma(close, mav_ma4_length, mav_ma4_type)
-    mav_ma5 = f_get_ma(close, mav_ma5_length, mav_ma5_type)
-    mav_vwap_value = ta.vwap(hlc3)
-    plot(mav_ma1_enabled ? mav_ma1 : na, color=mav_ma1_color, linewidth=2, title="MA1")
-    plot(mav_ma2_enabled ? mav_ma2 : na, color=mav_ma2_color, linewidth=2, title="MA2")
-    plot(mav_ma3_enabled ? mav_ma3 : na, color=mav_ma3_color, linewidth=2, title="MA3")
-    plot(mav_ma4_enabled ? mav_ma4 : na, color=mav_ma4_color, linewidth=2, title="MA4")
-    plot(mav_ma5_enabled ? mav_ma5 : na, color=mav_ma5_color, linewidth=2, title="MA5")
-    plot(mav_vwap_enabled ? mav_vwap_value : na, color=mav_vwap_color, linewidth=2, title="VWAP")
+float mav_ma1 = f_get_ma(close, mav_ma1_length, mav_ma1_type)
+float mav_ma2 = f_get_ma(close, mav_ma2_length, mav_ma2_type)
+float mav_ma3 = f_get_ma(close, mav_ma3_length, mav_ma3_type)
+float mav_ma4 = f_get_ma(close, mav_ma4_length, mav_ma4_type)
+float mav_ma5 = f_get_ma(close, mav_ma5_length, mav_ma5_type)
+float mav_vwap_value = ta.vwap(hlc3)
+plot(show_mas_vwap and mav_ma1_enabled ? mav_ma1 : na, color=mav_ma1_color, linewidth=2, title="MA1")
+plot(show_mas_vwap and mav_ma2_enabled ? mav_ma2 : na, color=mav_ma2_color, linewidth=2, title="MA2")
+plot(show_mas_vwap and mav_ma3_enabled ? mav_ma3 : na, color=mav_ma3_color, linewidth=2, title="MA3")
+plot(show_mas_vwap and mav_ma4_enabled ? mav_ma4 : na, color=mav_ma4_color, linewidth=2, title="MA4")
+plot(show_mas_vwap and mav_ma5_enabled ? mav_ma5 : na, color=mav_ma5_color, linewidth=2, title="MA5")
+plot(show_mas_vwap and mav_vwap_enabled ? mav_vwap_value : na, color=mav_vwap_color, linewidth=2, title="VWAP")
 
 
 // =============================================================================
@@ -369,7 +368,7 @@ if (show_vp)
         => 0
     float vp_vol = vp_MODE == 'Volume Profile' ? nz(volume, 100) : 100
     
-    [o, h, l, c, v, d] = request.security_lower_tf(syminfo.tickerid, timeframe.period, [open, high, low, close, vp_vol, vp_dir])
+    [o, h, l, c, v, d] = [open, high, low, close, vp_vol, vp_dir]
     
     var string vp_ltf_str = na
     if na(vp_ltf_str)
@@ -392,27 +391,25 @@ if (show_vp)
 // =============================================================================
 //                      4. SMART MONEY CONCEPTS MODULE
 // =============================================================================
-if (show_smc)
-    string smc_group = 'Smart Money Concepts'
-    bool smc_showTrendInput = input.bool(false, 'Color Candles', group=smc_group)
-    color smc_bullColor = input.color(#089981, 'Bull Color', group=smc_group)
-    color smc_bearColor = input.color(#F23645, 'Bear Color', group=smc_group)
+string smc_group = 'Smart Money Concepts'
+bool smc_showTrendInput = input.bool(false, 'Color Candles', group=smc_group)
+color smc_bullColor = input.color(#089981, 'Bull Color', group=smc_group)
+color smc_bearColor = input.color(#F23645, 'Bear Color', group=smc_group)
 
-    color smc_candleColor = close >= open ? smc_bullColor : smc_bearColor
-    float smc_plotOpen = smc_showTrendInput ? open : na
-    plotcandle(smc_plotOpen, high, low, close, color=smc_candleColor, wickcolor=smc_candleColor, bordercolor=smc_candleColor)
+color smc_candleColor = close >= open ? smc_bullColor : smc_bearColor
+float smc_plotOpen = show_smc and smc_showTrendInput ? open : na
+plotcandle(smc_plotOpen, high, low, close, color=smc_candleColor, wickcolor=smc_candleColor, bordercolor=smc_candleColor)
 
 // =============================================================================
 //                      5. SESSION PROFILE MODULE
 // =============================================================================
-if (show_sp)
-    string sp_group = 'Session Profile Settings'
-    bool sp_showDailyHighLow = input.bool(true, 'Show Daily High/Low', group=sp_group)
-    color sp_dailyHighColor = input.color(color.aqua, 'Daily High', group=sp_group)
-    color sp_dailyLowColor = input.color(color.orange, 'Daily Low', group=sp_group)
+string sp_group = 'Session Profile Settings'
+bool sp_showDailyHighLow = input.bool(true, 'Show Daily High/Low', group=sp_group)
+color sp_dailyHighColor = input.color(color.aqua, 'Daily High', group=sp_group)
+color sp_dailyLowColor = input.color(color.orange, 'Daily Low', group=sp_group)
 
-    float sp_prevDailyHigh = request.security(syminfo.tickerid, 'D', high[1], lookahead=barmerge.lookahead_on)
-    float sp_prevDailyLow = request.security(syminfo.tickerid, 'D', low[1], lookahead=barmerge.lookahead_on)
+float sp_prevDailyHigh = request.security(syminfo.tickerid, 'D', high[1], lookahead=barmerge.lookahead_on)
+float sp_prevDailyLow = request.security(syminfo.tickerid, 'D', low[1], lookahead=barmerge.lookahead_on)
 
-    plot(sp_showDailyHighLow ? sp_prevDailyHigh : na, 'Prev Daily High', sp_dailyHighColor, 1, plot.style_linebr)
-    plot(sp_showDailyHighLow ? sp_prevDailyLow : na, 'Prev Daily Low', sp_dailyLowColor, 1, plot.style_linebr)
+plot(show_sp and sp_showDailyHighLow ? sp_prevDailyHigh : na, 'Prev Daily High', sp_dailyHighColor, 1, plot.style_linebr)
+plot(show_sp and sp_showDailyHighLow ? sp_prevDailyLow : na, 'Prev Daily Low', sp_dailyLowColor, 1, plot.style_linebr)
