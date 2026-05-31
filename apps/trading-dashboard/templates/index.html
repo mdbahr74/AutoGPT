@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Local Multi-Chart Trading Dashboard</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <section>
+        <p class="eyebrow">Local market workstation</p>
+        <h1>Multi-Chart Trading Dashboard</h1>
+      </section>
+      <section class="layout-controls" aria-label="Chart layout controls">
+        <span>Charts</span>
+        <button data-layout="1">1</button>
+        <button data-layout="2">2</button>
+        <button data-layout="4" class="active">4</button>
+        <button data-layout="6">6</button>
+        <button data-layout="8">8</button>
+      </section>
+      <section class="status-strip" id="statusStrip">
+        <span class="status live">HL Live</span>
+        <span class="status">US Market Closed</span>
+        <span class="status">Indian Market Closed</span>
+      </section>
+    </header>
+
+    <main>
+      <aside class="side-panel">
+        <div class="panel-card">
+          <h2>Watchlist</h2>
+          <div class="watchlist" id="watchlist"></div>
+        </div>
+        <div class="panel-card">
+          <h2>Indicator stack</h2>
+          <p>Toggle any combination. The app does not enforce a two-indicator limit.</p>
+          <ul class="indicator-help">
+            <li>Overlay: Bollinger, VWAP, Volume Profile, Fair Value Gap</li>
+            <li>Lower panes: Volume, RSI, MACD, Williams %R</li>
+          </ul>
+        </div>
+      </aside>
+      <section id="chartGrid" class="chart-grid layout-4" aria-live="polite"></section>
+    </main>
+
+    <template id="paneTemplate">
+      <article class="chart-pane">
+        <div class="pane-toolbar">
+          <select class="market-select" aria-label="Market">
+            <option value="crypto">Crypto</option>
+            <option value="us">US Stocks</option>
+            <option value="india">Indian Stocks</option>
+          </select>
+          <input class="symbol-input" aria-label="Symbol" />
+          <select class="timeframe-select" aria-label="Timeframe">
+            <option value="1m">1m</option>
+            <option value="5m">5m</option>
+            <option value="15m" selected>15m</option>
+            <option value="30m">30m</option>
+            <option value="1h">1h</option>
+            <option value="1d">1D</option>
+            <option value="1w">1W</option>
+            <option value="1M">1M</option>
+          </select>
+          <details class="indicator-menu">
+            <summary>Indicators</summary>
+            <label><input type="checkbox" value="bollinger" /> Bollinger</label>
+            <label><input type="checkbox" value="rsi" /> RSI</label>
+            <label><input type="checkbox" value="macd" /> MACD</label>
+            <label><input type="checkbox" value="vwap" /> VWAP</label>
+            <label><input type="checkbox" value="volume" checked /> Volume</label>
+            <label><input type="checkbox" value="williams" /> Williams %R</label>
+            <label><input type="checkbox" value="profile" /> Volume Profile</label>
+            <label><input type="checkbox" value="fvg" /> Fair Value Gap</label>
+          </details>
+        </div>
+        <div class="pane-meta">
+          <strong class="pane-title"></strong>
+          <span class="last-price"></span>
+          <span class="data-source"></span>
+        </div>
+        <div class="chart-stack"></div>
+        <div class="pane-error" hidden></div>
+      </article>
+    </template>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

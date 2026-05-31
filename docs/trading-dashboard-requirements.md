@@ -217,6 +217,19 @@ The transcript mentions possible extensions:
 
 These should be treated as future roadmap items after the charting MVP is complete.
 
+## MVP implementation
+
+A first local implementation is available in `apps/trading-dashboard`. It uses a Python standard-library HTTP server, a dark responsive HTML/CSS/JavaScript frontend, TradingView Lightweight Charts from a CDN, Yahoo Finance chart endpoints for stocks, Binance public klines for crypto when reachable, and deterministic demo candles as an offline fallback.
+
+Run it with:
+
+```bash
+cd apps/trading-dashboard
+python app.py
+```
+
+Then open `http://127.0.0.1:5000`.
+
 ## MVP acceptance criteria
 
 The MVP is complete when:
