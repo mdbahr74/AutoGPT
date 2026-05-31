@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Charts — TradingView Plus Replacement</title>
+  <link rel="preconnect" href="https://s3.tradingview.com" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- ====================== Top toolbar ====================== -->
+  <header class="toolbar">
+    <div class="toolbar__group toolbar__group--brand">
+      <span class="brand-dot"></span>
+      <span class="brand">Charts</span>
+    </div>
+
+    <!-- Symbol search (controls the active chart) -->
+    <form id="symbol-form" class="toolbar__group symbol-box" autocomplete="off">
+      <svg class="symbol-box__icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+        <path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5Zm-6 0A4.5 4.5 0 1 1 14 9.5 4.49 4.49 0 0 1 9.5 14Z"/>
+      </svg>
+      <input id="symbol-input" class="symbol-box__input" type="text"
+             placeholder="Symbol e.g. BINANCE:BTCUSDT, NASDAQ:AAPL" spellcheck="false" />
+    </form>
+
+    <!-- Interval selector -->
+    <div class="toolbar__group seg" id="interval-seg" role="group" aria-label="Interval">
+      <button class="seg__btn" data-interval="1">1m</button>
+      <button class="seg__btn" data-interval="5">5m</button>
+      <button class="seg__btn" data-interval="15">15m</button>
+      <button class="seg__btn" data-interval="60">1h</button>
+      <button class="seg__btn" data-interval="240">4h</button>
+      <button class="seg__btn is-active" data-interval="D">1D</button>
+      <button class="seg__btn" data-interval="W">1W</button>
+    </div>
+
+    <!-- Indicator preset -->
+    <div class="toolbar__group">
+      <label class="select">
+        <span class="select__label">Indicators</span>
+        <select id="preset-select">
+          <option value="default">Default (RSI · MACD · Vol)</option>
+          <option value="trend">Trend (EMA 50/200 · Ichimoku)</option>
+          <option value="momentum">Momentum (RSI · MACD · Stoch)</option>
+          <option value="volatility">Volatility (Bollinger · ATR)</option>
+          <option value="clean">Clean (price only)</option>
+        </select>
+      </label>
+    </div>
+
+    <!-- Layout selector -->
+    <div class="toolbar__group seg" id="layout-seg" role="group" aria-label="Layout">
+      <button class="seg__btn is-active" data-layout="1" title="Single chart">
+        <svg viewBox="0 0 16 16" width="16" height="16"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5" fill="none" stroke="currentColor"/></svg>
+      </button>
+      <button class="seg__btn" data-layout="2h" title="Two charts (rows)">
+        <svg viewBox="0 0 16 16" width="16" height="16"><rect x="1.5" y="1.5" width="13" height="5.5" rx="1" fill="none" stroke="currentColor"/><rect x="1.5" y="9" width="13" height="5.5" rx="1" fill="none" stroke="currentColor"/></svg>
+      </button>
+      <button class="seg__btn" data-layout="2v" title="Two charts (columns)">
+        <svg viewBox="0 0 16 16" width="16" height="16"><rect x="1.5" y="1.5" width="5.5" height="13" rx="1" fill="none" stroke="currentColor"/><rect x="9" y="1.5" width="5.5" height="13" rx="1" fill="none" stroke="currentColor"/></svg>
+      </button>
+      <button class="seg__btn" data-layout="3" title="Three charts">
+        <svg viewBox="0 0 16 16" width="16" height="16"><rect x="1.5" y="1.5" width="13" height="5.5" rx="1" fill="none" stroke="currentColor"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1" fill="none" stroke="currentColor"/><rect x="9" y="9" width="5.5" height="5.5" rx="1" fill="none" stroke="currentColor"/></svg>
+      </button>
+      <button class="seg__btn" data-layout="4" title="Four charts (2x2)">
+        <svg viewBox="0 0 16 16" width="16" height="16"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1" fill="none" stroke="currentColor"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1" fill="none" stroke="currentColor"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1" fill="none" stroke="currentColor"/><rect x="9" y="9" width="5.5" height="5.5" rx="1" fill="none" stroke="currentColor"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ====================== Chart grid ====================== -->
+  <main id="grid" class="grid grid--1" aria-live="polite"></main>
+
+  <script src="https://s3.tradingview.com/tv.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
