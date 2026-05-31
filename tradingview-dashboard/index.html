@@ -69,8 +69,37 @@
     </div>
   </header>
 
-  <!-- ====================== Chart grid ====================== -->
-  <main id="grid" class="grid grid--1" aria-live="polite"></main>
+  <!-- ====================== Body: sidebar + chart grid ====================== -->
+  <div class="app">
+    <aside class="sidebar">
+      <!-- Watchlist -->
+      <section class="panel">
+        <div class="panel__head">
+          <span>Watchlist</span>
+          <span class="panel__sub" id="wl-source">live · Bitunix</span>
+        </div>
+        <form id="wl-form" class="wl-add" autocomplete="off">
+          <input id="wl-input" class="wl-add__input" type="text"
+                 placeholder="Add symbol e.g. SOLUSDT" spellcheck="false" />
+          <button class="wl-add__btn" type="submit" title="Add to watchlist">+</button>
+        </form>
+        <ul id="wl-list" class="wl-list"></ul>
+      </section>
+
+      <!-- Bitunix account (read-only) -->
+      <section class="panel panel--account">
+        <div class="panel__head">
+          <span>Bitunix Account</span>
+          <button id="acct-refresh" class="icon-btn" title="Refresh">&#x21bb;</button>
+        </div>
+        <div id="acct-body" class="account">
+          <div class="account__status" id="acct-status">Connecting…</div>
+        </div>
+      </section>
+    </aside>
+
+    <main id="grid" class="grid grid--1" aria-live="polite"></main>
+  </div>
 
   <script src="https://s3.tradingview.com/tv.js"></script>
   <script src="app.js"></script>

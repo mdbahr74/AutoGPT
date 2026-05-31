@@ -23,24 +23,43 @@ charts at once — which we recreate by tiling multiple free widgets in a grid.
 - **Interval buttons**: 1m / 5m / 15m / 1h / 4h / 1D / 1W.
 - **Indicator presets**: Default, Trend, Momentum, Volatility, Clean — and you
   can add *any* indicator directly on the chart with the `fx` button.
+- **Watchlist** (left sidebar) with live last-price + 24h change from Bitunix.
+  Click a row to load it in the active chart; add/remove symbols; persists in
+  your browser.
+- **Bitunix account panel** (read-only): available balance, margin, unrealized
+  PnL, and open positions.
 - Dark theme tuned to match TradingView's colors.
 
 ## Run it
 
-No build step, no dependencies. Just serve the folder (the TradingView script
-needs http/https, not `file://`):
+Needs **Node 18+** (for the backend that signs Bitunix requests and serves the
+app). No npm packages to install — the backend is zero-dependency.
 
 ```bash
 cd tradingview-dashboard
-python3 -m http.server 5173
+npm start          # or: node server.js
 # then open http://localhost:5173
 ```
 
-Or with Node:
+### Connect Bitunix (optional, for account + watchlist prices)
 
-```bash
-npx serve tradingview-dashboard
-```
+1. Create **read-only** API keys in your Bitunix account.
+2. Copy `.env.example` to `.env` and fill them in:
+   ```bash
+   cp .env.example .env
+   ```
+   ```ini
+   BITUNIX_API_KEY=your_key
+   BITUNIX_API_SECRET=your_secret
+   ```
+3. Restart the server. The account panel will populate.
+
+> The secret stays on the backend and is used only to **sign** requests — it is
+> never sent to the browser. The watchlist's live prices use Bitunix's *public*
+> market data and work even without keys. Charts come from TradingView and work
+> regardless.
+
+`.env` is git-ignored so your keys are never committed.
 
 ## Usage
 
