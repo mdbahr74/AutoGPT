@@ -96,6 +96,17 @@ async function handleTickers(res, params) {
   }
 }
 
+async function handleSymbols(res) {
+  try {
+    const json = await bitunixPublic("/api/v1/futures/market/trading_pairs", {});
+    const rows = json.data || [];
+    const symbols = rows.map((r) => r.symbol).filter(Boolean).sort();
+    sendJson(res, 200, { symbols });
+  } catch (err) {
+    sendJson(res, 502, { symbols: [], error: String(err) });
+  }
+}
+
 async function handleAccount(res) {
   if (!API_KEY || !API_SECRET) {
     return sendJson(res, 200, { ok: false, reason: "no-keys" });
@@ -149,6 +160,7 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
   if (url.pathname === "/api/bitunix/tickers") return handleTickers(res, url.searchParams);
+  if (url.pathname === "/api/bitunix/symbols") return handleSymbols(res);
   if (url.pathname === "/api/bitunix/account") return handleAccount(res);
 
   return serveStatic(req, res, url.pathname);

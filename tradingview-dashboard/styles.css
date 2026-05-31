@@ -48,6 +48,18 @@ html, body {
   box-shadow: 0 0 10px 1px rgba(41,98,255,.7);
 }
 
+/* Connection status pill */
+.conn {
+  width: 8px; height: 8px; border-radius: 50%;
+  display: inline-block; margin-left: 2px;
+  background: var(--text-dim);
+  transition: background .2s, box-shadow .2s;
+}
+.conn--ok      { background: #26a69a; box-shadow: 0 0 8px 1px rgba(38,166,154,.7); }
+.conn--backend { background: #f0b90b; box-shadow: 0 0 8px 1px rgba(240,185,11,.6); }
+.conn--off     { background: #ef5350; box-shadow: 0 0 8px 1px rgba(239,83,80,.6); }
+.conn--wait    { background: var(--text-dim); }
+
 /* Symbol search box */
 .symbol-box {
   flex: 1 1 280px;
@@ -166,6 +178,8 @@ html, body {
   cursor: default;
 }
 .wl-item:hover { background: rgba(255,255,255,.04); }
+.wl-item.is-active { background: rgba(41,98,255,.12); box-shadow: inset 2px 0 0 var(--accent); }
+.wl-item.is-active .wl-item__sym { color: var(--accent); }
 .wl-item__sym {
   background: transparent; border: none; color: var(--text);
   font-size: 12px; font-weight: 600; text-align: left; cursor: pointer; padding: 0;

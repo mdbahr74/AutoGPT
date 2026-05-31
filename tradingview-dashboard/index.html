@@ -13,6 +13,7 @@
     <div class="toolbar__group toolbar__group--brand">
       <span class="brand-dot"></span>
       <span class="brand">Charts</span>
+      <span id="conn" class="conn conn--wait" title="Connecting…"></span>
     </div>
 
     <!-- Symbol search (controls the active chart) -->
@@ -20,7 +21,7 @@
       <svg class="symbol-box__icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
         <path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5Zm-6 0A4.5 4.5 0 1 1 14 9.5 4.49 4.49 0 0 1 9.5 14Z"/>
       </svg>
-      <input id="symbol-input" class="symbol-box__input" type="text"
+      <input id="symbol-input" class="symbol-box__input" type="text" list="symbol-suggestions"
              placeholder="Symbol e.g. BINANCE:BTCUSDT, NASDAQ:AAPL" spellcheck="false" />
     </form>
 
@@ -79,7 +80,7 @@
           <span class="panel__sub" id="wl-source">live · Bitunix</span>
         </div>
         <form id="wl-form" class="wl-add" autocomplete="off">
-          <input id="wl-input" class="wl-add__input" type="text"
+          <input id="wl-input" class="wl-add__input" type="text" list="symbol-suggestions"
                  placeholder="Add symbol e.g. SOLUSDT" spellcheck="false" />
           <button class="wl-add__btn" type="submit" title="Add to watchlist">+</button>
         </form>
@@ -100,6 +101,9 @@
 
     <main id="grid" class="grid grid--1" aria-live="polite"></main>
   </div>
+
+  <!-- Symbol autocomplete, populated from Bitunix trading pairs -->
+  <datalist id="symbol-suggestions"></datalist>
 
   <script src="https://s3.tradingview.com/tv.js"></script>
   <script src="app.js"></script>

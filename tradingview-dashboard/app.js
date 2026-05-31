@@ -67,6 +67,7 @@ function render() {
   }
 
   syncSymbolInput();
+  highlightWatchlist();
 }
 
 function createWidget(containerId, symbol) {
@@ -108,22 +109,27 @@ function setActive(index) {
     c.classList.toggle("is-active", Number(c.dataset.index) === index);
   });
   syncSymbolInput();
+  highlightWatchlist();
+  persist();
 }
 
 function setLayout(layout) {
   if (!(layout in LAYOUT_PANES)) return;
   state.layout = layout;
   render();
+  persist();
 }
 
 function setChartInterval(interval) {
   state.interval = interval;
   render();
+  persist();
 }
 
 function setPreset(preset) {
   state.preset = preset;
   render();
+  persist();
 }
 
 function setSymbol(rawSymbol) {
@@ -131,6 +137,7 @@ function setSymbol(rawSymbol) {
   if (!symbol) return;
   state.symbols[state.active] = symbol;
   render();
+  persist();
 }
 
 function syncSymbolInput() {
@@ -232,6 +239,16 @@ function renderWatchlist() {
     li.append(symBtn, px, rm);
     list.appendChild(li);
   });
+  highlightWatchlist();
+}
+
+/* Mark the watchlist row whose symbol is loaded in the focused chart. */
+function highlightWatchlist() {
+  const activeSym = bitunixSymbol((state.symbols[state.active] || "").toUpperCase());
+  document.querySelectorAll(".wl-item").forEach((li) => {
+    const px = li.querySelector(".wl-item__px");
+    li.classList.toggle("is-active", !!px && px.dataset.sym === activeSym);
+  });
 }
 
 function addWatch(rawSymbol) {
@@ -273,14 +290,24 @@ async function refreshPrices() {
       el.title = (chg >= 0 ? "+" : "") + chg.toFixed(2) + "% (24h)";
     });
     setSource("live · Bitunix");
+    setConn(data.length ? "ok" : "backend",
+      data.length ? "Live data · Bitunix" : "Backend up · Bitunix unreachable");
   } catch (_) {
     setSource("offline — start the backend");
+    setConn("off", "Backend offline — run npm start");
   }
 }
 
 function setSource(text) {
   const el = document.getElementById("wl-source");
   if (el) el.textContent = text;
+}
+
+function setConn(level, title) {
+  const el = document.getElementById("conn");
+  if (!el) return;
+  el.className = "conn conn--" + level;
+  el.title = title;
 }
 
 /* ============================================================
@@ -366,10 +393,70 @@ document.getElementById("wl-form").addEventListener("submit", (e) => {
 document.getElementById("acct-refresh").addEventListener("click", refreshAccount);
 
 /* ============================================================
+   UI state persistence (layout, interval, preset, symbols)
+   ============================================================ */
+const STATE_KEY = "tv_ui_state_v1";
+
+function persist() {
+  localStorage.setItem(STATE_KEY, JSON.stringify({
+    layout: state.layout,
+    interval: state.interval,
+    preset: state.preset,
+    active: state.active,
+    symbols: state.symbols,
+  }));
+}
+
+function loadState() {
+  try {
+    const s = JSON.parse(localStorage.getItem(STATE_KEY));
+    if (s && typeof s === "object") {
+      if (s.layout in LAYOUT_PANES) state.layout = s.layout;
+      if (typeof s.interval === "string") state.interval = s.interval;
+      if (s.preset in PRESETS) state.preset = s.preset;
+      if (Number.isInteger(s.active)) state.active = s.active;
+      if (Array.isArray(s.symbols) && s.symbols.length) state.symbols = s.symbols;
+    }
+  } catch (_) { /* ignore */ }
+}
+
+/* Reflect the loaded state in the toolbar controls. */
+function syncToolbar() {
+  document.querySelectorAll("#layout-seg .seg__btn").forEach((b) =>
+    b.classList.toggle("is-active", b.dataset.layout === state.layout));
+  document.querySelectorAll("#interval-seg .seg__btn").forEach((b) =>
+    b.classList.toggle("is-active", b.dataset.interval === state.interval));
+  const preset = document.getElementById("preset-select");
+  if (preset) preset.value = state.preset;
+}
+
+/* ============================================================
+   Symbol autocomplete (Bitunix trading pairs)
+   ============================================================ */
+async function loadSymbolSuggestions() {
+  try {
+    const res = await fetch("/api/bitunix/symbols");
+    if (!res.ok) return;
+    const json = await res.json();
+    const dl = document.getElementById("symbol-suggestions");
+    const frag = document.createDocumentFragment();
+    (json.symbols || []).forEach((s) => {
+      const opt = document.createElement("option");
+      opt.value = s;
+      frag.appendChild(opt);
+    });
+    dl.appendChild(frag);
+  } catch (_) { /* offline — autocomplete simply stays empty */ }
+}
+
+/* ============================================================
    Boot
    ============================================================ */
+loadState();
+syncToolbar();
 render();
 renderWatchlist();
+loadSymbolSuggestions();
 refreshPrices();
 refreshAccount();
 setInterval(refreshPrices, 8000);   // live watchlist prices
