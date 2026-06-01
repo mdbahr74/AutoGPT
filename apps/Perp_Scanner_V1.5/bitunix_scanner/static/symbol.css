@@ -391,11 +391,14 @@
       align-items: center;
       border-bottom: 1px solid var(--line);
       display: grid;
-      gap: 8px;
-      grid-template-columns: 86px minmax(160px, 1fr) 82px 82px 82px 112px;
-      font: 11.5px/1.25 var(--font-data);
+      gap: 6px;
+      grid-template-columns: minmax(62px, 86px) minmax(110px, 1fr) minmax(52px, 74px) minmax(52px, 74px) minmax(52px, 74px) minmax(74px, 120px);
+      /* Font tracks the auto-fit row height so it stays legible at any zoom. */
+      font-family: var(--font-data);
+      font-size: clamp(9.5px, calc(var(--bookmap-row-height, 23px) * 0.5), 14px);
+      line-height: 1.2;
       min-height: var(--bookmap-row-height);
-      padding: 3px 9px;
+      padding: 2px 9px;
       position: relative;
     }
     .bookmap-row.is-last { background: rgba(110, 168, 254, .11); }
@@ -473,8 +476,8 @@
     .bookmap-half.buy { background: var(--green); }
     .bookmap-book { background: #101317; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); display: block; overflow: hidden; padding-inline: 6px; position: relative; }
     .bookmap-book .bookmap-fill { z-index: 0; }
-    .bookmap-tags { align-items: center; display: flex; gap: 4px; justify-content: flex-end; min-width: 0; }
-    .bookmap-tag { border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 10px; line-height: 1; padding: 3px 6px; white-space: nowrap; }
+    .bookmap-tags { align-items: center; display: flex; gap: 4px; justify-content: flex-end; min-width: 0; overflow: hidden; }
+    .bookmap-tag { border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: clamp(8px, calc(var(--bookmap-row-height, 23px) * 0.4), 11px); line-height: 1; padding: 2px 5px; white-space: nowrap; }
     .bookmap-tag.vwap { border-color: var(--blue); color: var(--blue); }
     .bookmap-tag.poc, .bookmap-tag.hvn { border-color: var(--yellow); color: var(--yellow); }
     .bookmap-tag.lvn { border-color: #9b7cff; color: #bda9ff; }
