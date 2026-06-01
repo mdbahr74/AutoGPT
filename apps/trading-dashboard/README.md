@@ -36,9 +36,19 @@ python app.py
 Then open <http://127.0.0.1:5000>. No dependencies are required — the backend
 uses only the Python standard library.
 
-> Internet access is required for live Binance data and the CDN-hosted chart
-> library. If Binance is unreachable, the backend returns deterministic demo
-> candles (with synthetic delta) so the UI still runs; panes are tagged `demo`.
+### Data sources
+
+The backend tries these in order and tags each pane with the one it used:
+
+1. **`binance`** — Binance.com. Real taker-buy delta, but **geo-blocked in the
+   US** (returns 403), so US users fall through to the next source.
+2. **`binance.us`** — Binance.US. Same real delta, US-legal, fewer coins.
+3. **`bybit` / `bybit-perp`** — Bybit spot, then linear perps (covers almost
+   everything, including small-cap perps). Bybit klines have no taker split, so
+   delta is **estimated** from each candle's close location (`Δ est` in the
+   readout) until live trade-stream delta lands in a later stage.
+4. **`demo`** — deterministic offline candles so the UI still runs with no
+   network. Tagged `demo` in amber.
 
 ## Roadmap
 

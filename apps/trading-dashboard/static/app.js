@@ -312,7 +312,7 @@ class Pane {
       this.candleSeries.setData(this.candles.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
       this.applyStudies();
       this.priceChart.timeScale().fitContent();
-      this.updateMeta(payload.source);
+      this.updateMeta(payload.source, payload.deltaReal);
     } catch (error) {
       const box = this.element.querySelector('.pane-error');
       box.hidden = false;
@@ -354,14 +354,15 @@ class Pane {
     this.redrawProfile(); // order blocks share the canvas overlay
   }
 
-  updateMeta(source) {
+  updateMeta(source, deltaReal) {
     const last = this.candles[this.candles.length - 1];
     this.element.querySelector('.last-price').textContent = last
       ? last.close.toLocaleString(undefined, { maximumFractionDigits: 6 }) : 'No data';
     const profile = buildProfile(this.candles);
     const stats = this.element.querySelector('.pane-stats');
     if (profile) {
-      stats.textContent = `POC ${profile.poc.toLocaleString(undefined, { maximumFractionDigits: 4 })}`;
+      const deltaNote = deltaReal === false && source !== 'demo' ? ' · Δ est' : '';
+      stats.textContent = `POC ${profile.poc.toLocaleString(undefined, { maximumFractionDigits: 4 })}${deltaNote}`;
     }
     const tag = this.element.querySelector('.data-source');
     tag.textContent = source;
