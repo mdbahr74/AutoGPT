@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Bitunix Perp Scanner
+Comment=Launch the local Bitunix perpetual futures scanner dashboard
+Path=/media/matt/Data_1/projects/Using/Perp_Scanner_V1.5
+Exec=/media/matt/Data_1/projects/Using/Perp_Scanner_V1.5/launch_bitunix_scanner.sh
+Terminal=false
+Icon=/media/matt/Data_1/projects/Using/Perp_Scanner_V1.5/assets/bitunix-perp-scanner.svg
+Categories=Office;Finance;
+StartupWMClass=bitunix-perp-scanner

@@ -1,0 +1,9 @@
+[project]
+name = "bitunix-scanner"
+version = "0.1.0"
+description = "Bitunix-only perpetual futures scanner"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

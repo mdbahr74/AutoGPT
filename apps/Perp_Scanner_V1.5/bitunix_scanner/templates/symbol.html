@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>__SYMBOL__ - Bitunix Perp Scanner</title>
+  <link rel="stylesheet" href="__SYMBOL_CSS__">
+</head>
+<body>
+  <header>
+    <div>
+      <h1 id="title">__SYMBOL__</h1>
+      <a href="/">Back to scanner</a>
+    </div>
+    <div class="toolbar">
+      <input id="symbolSearch" placeholder="Open symbol">
+      <select id="depthLimit">
+        <option value="15">15 levels</option>
+        <option value="50" selected>50 levels</option>
+        <option value="max">Max levels</option>
+      </select>
+      <button id="fullscreen">Fullscreen</button>
+      <button id="apiMenuButton">APIs</button>
+      <button id="layoutToggle">Layout</button>
+      <button id="layoutReset">Reset Layout</button>
+      <div class="workspace-controls">
+        <label for="workspaceName">Workspace</label>
+        <select id="workspaceSelect"></select>
+        <input id="workspaceName" class="workspace-name" placeholder="Name">
+        <button id="workspaceSave" type="button">Save</button>
+        <button id="workspaceBlank" type="button">Blank</button>
+        <button id="workspaceDelete" type="button">Delete</button>
+      </div>
+      <details class="widget-menu">
+        <summary>Widgets</summary>
+        <div id="widgetControls" class="widget-options"></div>
+      </details>
+      <button id="refresh">Refresh</button>
+      <span id="status" class="muted">Connecting...</span>
+      <div class="brightness-control">
+        <label for="brightnessSlider" title="Darken background">Dark</label>
+        <input id="brightnessSlider" type="range" min="0" max="100" value="0" title="Darken background (0=normal, 100=black)">
+      </div>
+      <div class="window-controls" aria-label="Window controls">
+        <button type="button" data-zoom-action="out" title="Zoom out">-</button>
+        <button type="button" data-zoom-action="reset" title="Reset zoom">100</button>
+        <button type="button" data-zoom-action="in" title="Zoom in">+</button>
+        <button type="button" data-window-action="minimize" title="Minimize">_</button>
+        <button type="button" data-window-action="toggle-maximize" title="Maximize or restore">[]</button>
+        <button type="button" data-window-action="close" title="Close">X</button>
+      </div>
+    </div>
+  </header>
+  <div id="apiMenu" class="api-menu">
+    <div class="api-menu-title">
+      <strong>API Connections</strong>
+      <button id="apiMenuClose" type="button">Close</button>
+    </div>
+    <table><tbody id="apiStatus"><tr><td>Loading...</td></tr></tbody></table>
+  </div>
+  <main>
+    <div class="grid" id="detailGrid">
+      <section class="panel ticker-card-panel" data-panel-id="tickerCard" draggable="true">
+        <h2><span>Ticker Card</span><span id="tickerCardStatus" class="muted">Live</span></h2>
+        <div class="ticker-card">
+          <div class="ticker-card-top">
+            <div class="ticker-icon" id="tickerCardIcon">--</div>
+            <div class="ticker-title">
+              <strong id="tickerCardSymbol">__SYMBOL__</strong>
+              <span id="tickerCardPair">Perpetual Contract</span>
+              <small id="tickerCardExchange">Bitunix Perp</small>
+            </div>
+          </div>
+          <div class="ticker-price-row">
+            <strong id="tickerCardLast">-</strong>
+            <span id="tickerCardQuote">USDT</span>
+            <span id="tickerCardMove">-</span>
+          </div>
+          <div class="ticker-market-line">
+            <span id="tickerCardMarketDot" class="market-dot"></span>
+            <span id="tickerCardMarketState">Market status</span>
+          </div>
+          <div class="ticker-spread-row">
+            <span id="tickerCardBid">Bid -</span>
+            <span id="tickerCardAsk">Ask -</span>
+          </div>
+          <div class="ticker-range">
+            <div class="ticker-range-head"><span>Day Range</span><strong id="tickerCardDayRangeText">-</strong></div>
+            <div class="ticker-range-track"><span id="tickerCardDayRangeFill"></span><i id="tickerCardDayRangePin"></i></div>
+          </div>
+          <div class="ticker-range">
+            <div class="ticker-range-head"><span id="tickerCardHistoryRangeLabel">History Range</span><strong id="tickerCardHistoryRangeText">-</strong></div>
+            <div class="ticker-range-track"><span id="tickerCardHistoryRangeFill"></span><i id="tickerCardHistoryRangePin"></i></div>
+          </div>
+        </div>
+      </section>
+      <section class="panel metrics-panel" data-panel-id="metrics" draggable="true">
+        <h2>
+          <span>Market Snapshot</span>
+          <span class="snapshot-tools">
+            <select id="snapshotFrame" title="Candle move timeframe">
+              <option value="1m">1m</option>
+              <option value="5m" selected>5m</option>
+              <option value="15m">15m</option>
+              <option value="1h">1h</option>
+              <option value="4h">4h</option>
+              <option value="1d">1d</option>
+            </select>
+            <details class="snapshot-menu">
+              <summary>Fields</summary>
+              <div id="snapshotFieldControls" class="snapshot-options"></div>
+            </details>
+          </span>
+        </h2>
+        <div class="metrics snapshot-grid">
+          <button class="metric snapshot-card" data-snapshot-id="last" type="button"><strong id="last">-</strong><span>Last</span></button>
+          <button class="metric snapshot-card" data-snapshot-id="move24" type="button"><strong id="move">-</strong><span>24h Move</span></button>
+          <button class="metric snapshot-card" data-snapshot-id="dailyMove" type="button"><strong id="dailyMove">-</strong><span>Daily Open Move</span></button>
+          <button class="metric snapshot-card" data-snapshot-id="frameMove" type="button"><strong id="frameMove">-</strong><span id="frameMoveLabel">5m Move</span></button>
+          <button class="metric snapshot-card" data-snapshot-id="sessionDelta" type="button"><strong id="sessionDelta">-</strong><span>Session Delta</span></button>
+          <button class="metric snapshot-card" data-snapshot-id="sessionFlow" type="button"><strong id="sessionFlow">-</strong><span>Session Flow</span></button>
+          <button class="metric snapshot-card" data-snapshot-id="spread" type="button"><strong id="snapshotSpread">-</strong><span>Spread</span></button>
+          <button class="metric snapshot-card" data-snapshot-id="bookImbalance" type="button"><strong id="snapshotBookImbalance">-</strong><span>Book Imbalance</span></button>
+          <button class="metric snapshot-card" data-snapshot-id="funding" type="button"><strong id="funding">-</strong><span>Funding</span></button>
+          <button class="metric snapshot-card" data-snapshot-id="volume24" type="button"><strong id="volume">-</strong><span>24h Quote Volume</span></button>
+          <button class="metric snapshot-card" data-snapshot-id="range15" type="button"><strong id="range15">-</strong><span>15m Range</span></button>
+          <button class="metric snapshot-card" data-snapshot-id="scanMove" type="button"><strong id="scanMove">-</strong><span>Scan Move</span></button>
+          <button class="metric snapshot-card" data-snapshot-id="dailyRange" type="button"><strong id="dailyRange">-</strong><span>Daily Range</span></button>
+          <button class="metric snapshot-card" data-snapshot-id="dailyHighLow" type="button"><strong id="dailyHighLow">-</strong><span>Daily Low / High</span></button>
+          <button class="metric snapshot-card" data-snapshot-id="sessionVol" type="button"><strong id="sessionVol">-</strong><span>Session Tape Vol</span></button>
+          <button class="metric snapshot-card" data-snapshot-id="largeBlocks" type="button"><strong id="snapshotLargeBlocks">0</strong><span>Large Blocks</span></button>
+          <button class="metric snapshot-card" data-snapshot-id="poc" type="button"><strong id="snapshotPoc">-</strong><span>Tape POC</span></button>
+          <button class="metric snapshot-card" data-snapshot-id="impulseMove" type="button"><strong id="snapshotImpulseMove">Watching</strong><span>Impulse Move</span></button>
+          <button class="metric snapshot-card" data-snapshot-id="impulseVwap" type="button"><strong id="snapshotImpulseVwap">-</strong><span>Impulse VWAP</span></button>
+          <button class="metric snapshot-card" data-snapshot-id="impulseHvn" type="button"><strong id="snapshotImpulseHvn">-</strong><span>Lower HVN</span></button>
+          <button class="metric snapshot-card" data-snapshot-id="leverage" type="button"><strong id="snapshotLeverage">-</strong><span>Max Leverage</span></button>
+        </div>
+      </section>
+      <div class="panel-stack" id="leftDetailPanels">
+        <section class="panel compact-book" data-panel-id="orderbook" draggable="true">
+          <h2><span>Order Book</span><span id="bookTime" class="muted">REST snapshot</span></h2>
+          <div class="scroll">
+            <table class="vertical-book">
+              <thead><tr><th>Price</th><th>Size</th><th>Sum</th></tr></thead>
+              <tbody id="asks"></tbody>
+              <tbody class="book-ticker">
+                <tr><td colspan="3" id="bookTickerPrice" class="dom-price" style="text-align:center; padding: 8px 10px;">-</td></tr>
+              </tbody>
+              <tbody id="bids"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="panel dom-panel" data-panel-id="dom" draggable="true">
+          <h2>
+            <span>DOM / Volume By Price</span>
+            <span class="dom-controls">
+              <label class="safety-toggle"><input id="domFollowPrice" type="checkbox" checked> Follow</label>
+              <label class="safety-toggle"><input id="domShowSpread" type="checkbox" checked> Spread</label>
+              <button id="domCenter" type="button">Center</button>
+              <label class="safety-toggle"><input id="domSafetyLock" type="checkbox" checked> Order Lock</label>
+              <span id="domStatus" class="muted">Waiting for book</span>
+            </span>
+          </h2>
+          <div class="scroll">
+            <table>
+              <thead><tr><th>Ask</th><th>Price</th><th>Bid</th><th>Tape Vol</th><th>Delta</th></tr></thead>
+              <tbody id="domRows"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="panel bookmap-panel" data-panel-id="bookmapProfile" draggable="true">
+          <h2>
+            <span>Daily Profile</span>
+            <span class="bookmap-controls">
+              <select id="bookmapMode" title="Profile metric">
+                <option value="volume" selected>Volume</option>
+                <option value="delta">Delta</option>
+              </select>
+              <label class="safety-toggle"><input id="bookmapFollow" type="checkbox" checked> Follow</label>
+              <select id="impulseTrackMode" title="Daily profile anchor mode">
+                <option value="impulse" selected>Impulse</option>
+                <option value="long">Long</option>
+                <option value="short">Short</option>
+              </select>
+              <input id="impulseAnchorPrice" class="impulse-price-input" inputmode="decimal" placeholder="Price" title="Impulse anchor or position entry price">
+              <button id="impulseSet" type="button">Set</button>
+              <button id="impulseClear" type="button">Clear</button>
+              <button id="bookmapCenter" type="button">Center</button>
+              <span id="bookmapStatus" class="muted">Waiting for tape</span>
+            </span>
+          </h2>
+          <div class="bookmap-summary">
+            <div class="bookmap-stat"><span>Daily Anchor</span><strong id="profileAnchor">-</strong></div>
+            <div class="bookmap-stat"><span>POC</span><strong id="profilePoc">-</strong></div>
+            <div class="bookmap-stat"><span>VWAP</span><strong id="profileVwap">-</strong></div>
+            <div class="bookmap-stat"><span>Nearest LVN</span><strong id="profileLvn">-</strong></div>
+            <div class="bookmap-stat"><span>Impulse VWAP</span><strong id="impulseVwap">-</strong></div>
+            <div class="bookmap-stat"><span>Lower HVN</span><strong id="impulseHvn">-</strong></div>
+            <div class="bookmap-stat"><span>Impulse</span><strong id="impulseMove">Watching</strong></div>
+            <div class="bookmap-stat"><span>Profile Delta</span><strong id="profileDelta">-</strong></div>
+            <div class="bookmap-stat"><span>Live Tape</span><strong id="profileTape">-</strong></div>
+          </div>
+          <div class="scroll">
+            <div id="bookmapRows"></div>
+          </div>
+        </section>
+        <section class="panel liquidity-heatmap-panel" data-panel-id="liquidityHeatmap" draggable="true">
+          <h2>
+            <span>Liquidity Heatmap</span>
+            <span class="liquidity-controls">
+              <select id="liquidityMode">
+                <option value="depth" selected>Depth</option>
+                <option value="pressure">Pressure</option>
+                <option value="walls">Walls</option>
+              </select>
+              <select id="liquidityWindow">
+                <option value="60000">1m</option>
+                <option value="180000" selected>3m</option>
+                <option value="300000">5m</option>
+                <option value="600000">10m</option>
+                <option value="900000">15m</option>
+                <option value="1800000">30m</option>
+              </select>
+              <select id="liquidityRows">
+                <option value="48">48 rows</option>
+                <option value="72" selected>72 rows</option>
+                <option value="110">110 rows</option>
+                <option value="144">144 rows</option>
+              </select>
+              <label class="safety-toggle"><input id="liquidityBubbles" type="checkbox" checked> Prints</label>
+              <label class="safety-toggle"><input id="liquidityMarks" type="checkbox" checked> Marks</label>
+              <button id="liquidityClear" type="button">Clear</button>
+              <span id="liquidityStatus" class="muted">Waiting for live book</span>
+            </span>
+          </h2>
+          <div class="liquidity-summary">
+            <div class="liquidity-stat"><span>Frames</span><strong id="liquidityFrames">0</strong></div>
+            <div class="liquidity-stat"><span>Book Tilt</span><strong id="liquidityBookTilt">-</strong></div>
+            <div class="liquidity-stat"><span>Spread</span><strong id="liquiditySpread">-</strong></div>
+            <div class="liquidity-stat"><span>Strong Bid</span><strong id="liquidityStrongBid">-</strong></div>
+            <div class="liquidity-stat"><span>Strong Ask</span><strong id="liquidityStrongAsk">-</strong></div>
+            <div class="liquidity-stat"><span>Nearest Wall</span><strong id="liquidityNearestWall">-</strong></div>
+            <div class="liquidity-stat"><span>Tape POC</span><strong id="liquidityTapePoc">-</strong></div>
+            <div class="liquidity-stat"><span>Print Flow</span><strong id="liquidityPrintFlow">-</strong></div>
+            <div class="liquidity-stat"><span>CVD</span><strong id="liquidityCvd">-</strong></div>
+          </div>
+          <div class="liquidity-canvas-wrap">
+            <canvas id="liquidityHeatmapCanvas"></canvas>
+            <div class="liquidity-legend" aria-hidden="true">
+              <span><i class="legend-bid"></i>Bid</span>
+              <span><i class="legend-ask"></i>Ask</span>
+              <span><i class="legend-wall"></i>Wall</span>
+              <span><i class="legend-print"></i>Print</span>
+            </div>
+            <div id="liquidityTooltip" class="liquidity-tooltip" hidden></div>
+          </div>
+        </section>
+        <section class="panel impulse-history-panel" data-panel-id="impulseHistory" draggable="true">
+          <h2>
+            <span>Impulse History</span>
+            <span class="impulse-history-controls">
+              <label>Spike <input id="impulseHistoryThreshold" inputmode="decimal" value="25"></label>
+              <select id="impulseHistoryRange">
+                <option value="30">30d</option>
+                <option value="90" selected>90d</option>
+                <option value="180">180d</option>
+                <option value="200">200d</option>
+              </select>
+              <button id="impulseHistoryRefresh" type="button">Refresh</button>
+              <span id="impulseHistoryStatus" class="muted">Daily candles</span>
+            </span>
+          </h2>
+          <div class="impulse-history-summary">
+            <div class="impulse-stat"><span>State</span><strong id="impulseHistoryState">-</strong></div>
+            <div class="impulse-stat"><span>Move</span><strong id="impulseHistoryMove">-</strong></div>
+            <div class="impulse-stat"><span>Off High</span><strong id="impulseHistoryOffHigh">-</strong></div>
+            <div class="impulse-stat"><span>Drawdown</span><strong id="impulseHistoryDrawdown">-</strong></div>
+            <div class="impulse-stat"><span>Rebound</span><strong id="impulseHistoryRebound">-</strong></div>
+            <div class="impulse-stat"><span>Days From High</span><strong id="impulseHistoryDaysHigh">-</strong></div>
+          </div>
+          <div id="impulseHistoryChart" class="impulse-chart">Loading...</div>
+          <div class="scroll impulse-history-table">
+            <table>
+              <thead><tr><th>Impulse</th><th>Start</th><th>High</th><th>Move</th><th>Off High</th><th>State</th></tr></thead>
+              <tbody id="impulseHistoryRows"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="panel flow-panel" data-panel-id="flow" draggable="true">
+          <h2><span>Flow Profile</span><span id="flowStatus" class="muted">Tape-derived</span></h2>
+          <div class="flow-metrics">
+            <div class="flow-metric"><span class="muted">CVD Quote</span><strong id="cvdQuote">-</strong></div>
+            <div class="flow-metric"><span class="muted">Buy Vol</span><strong id="buyVol">-</strong></div>
+            <div class="flow-metric"><span class="muted">Sell Vol</span><strong id="sellVol">-</strong></div>
+            <div class="flow-metric"><span class="muted">Large Blocks</span><strong id="blockCount">0</strong></div>
+          </div>
+          <div class="profile-bars" id="volumeProfile"></div>
+          <table><thead><tr><th>Large Print</th><th>Side</th><th>Price</th><th>Quote</th></tr></thead><tbody id="blockTrades"></tbody></table>
+        </section>
+        <section class="panel liquidations-panel" data-panel-id="liquidations" draggable="true">
+          <h2>
+            <span>CoinGlass Liquidations</span>
+            <select id="liqRange">
+              <option value="1h">1h</option>
+              <option value="4h" selected>4h</option>
+              <option value="12h">12h</option>
+              <option value="24h">24h</option>
+            </select>
+          </h2>
+          <div id="liquidations" class="error">Loading...</div>
+        </section>
+      </div>
+      <div class="panel-stack" id="movableDetailPanels">
+        <section class="panel top-panel" data-panel-id="trades" draggable="true">
+          <h2>
+            <span>Time &amp; Sales</span>
+            <span class="inline-controls">
+              <input id="blockUsdThreshold" inputmode="decimal" value="5000" title="Large block USDT threshold">
+              <button id="audioToggle">Audio Off</button>
+              <span id="tradeStatus" class="muted">Waiting for prints</span>
+            </span>
+          </h2>
+          <div class="scroll">
+            <table>
+              <thead><tr><th>Time</th><th>Side</th><th>Price</th><th>Size</th><th>Quote Vol</th></tr></thead>
+              <tbody id="trades"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="panel order-panel" data-panel-id="order" draggable="true">
+        <h2><span>Order Ticket</span><span id="orderMode" class="muted">Disabled</span></h2>
+        <div class="form-grid">
+          <div class="side-toggle">
+            <button id="sideBuy" class="buy active" data-side="BUY">Open / Buy</button>
+            <button id="sideSell" class="sell" data-side="SELL">Open / Sell</button>
+          </div>
+          <div class="ticket-tabs">
+            <button id="marginMode" class="active">Cross</button>
+            <button id="levDown">-</button>
+            <button id="leverageButton">25x</button>
+            <button id="levUp">+</button>
+          </div>
+          <div class="ticket-tabs">
+            <button class="type-tab active" data-type="LIMIT">Limit</button>
+            <button class="type-tab" data-type="MARKET">Market</button>
+            <button class="type-tab" data-type="TRIGGER">Trigger</button>
+            <button class="type-tab" data-type="SCALE">Scale</button>
+          </div>
+          <div class="form-row">
+            <label>Available <input id="availableMargin" inputmode="decimal" placeholder="USDT available"></label>
+            <label>Price <input id="orderPrice" inputmode="decimal" placeholder="Best market"></label>
+          </div>
+          <div class="form-row">
+            <label>By Qty <input id="orderQty" inputmode="decimal" placeholder="Base qty"></label>
+            <label>USD Position <input id="usdPosition" inputmode="decimal" placeholder="Notional USDT"></label>
+          </div>
+          <div class="percent-row">
+            <button data-percent="25">25%</button>
+            <button data-percent="50">50%</button>
+            <button data-percent="75">75%</button>
+            <button data-percent="100">100%</button>
+          </div>
+          <label>Effect
+            <select id="orderEffect"><option value="GTC">GTC</option><option value="POST_ONLY">Post Only</option><option value="IOC">IOC</option><option value="FOK">FOK</option></select>
+          </label>
+          <label><span><input id="orderSafetyLock" type="checkbox" checked> Safety lock: block live order submission</span></label>
+          <label><span><input id="reduceOnly" type="checkbox"> Reduce only</span></label>
+          <label><span><input id="orderConfirm" type="checkbox"> I understand this can submit a real futures order when trading is enabled.</span></label>
+          <div class="action-row">
+            <button id="submitBuy" class="buy">Open Long</button>
+            <button id="submitSell" class="sell">Open Short</button>
+          </div>
+          <div class="calc-box">
+            <strong>Margin Calculator</strong>
+            <div class="form-row">
+              <label>Account Equity <input id="accountEquity" inputmode="decimal" placeholder="Total USDT"></label>
+              <label>Maint. Margin % <input id="maintenanceMargin" inputmode="decimal" value="0.5"></label>
+            </div>
+            <table class="calc-results"><tbody id="marginCalc"></tbody></table>
+            <div class="warning-text">Estimate only. Real liquidation depends on Bitunix tiers, fees, funding, cross-collateral, open PnL, and position mode.</div>
+          </div>
+          <div id="orderResult" class="muted">Trading API is disabled until configured.</div>
+        </div>
+      </section>
+      <section class="panel pressure-panel" data-panel-id="pressure" draggable="true">
+        <h2><span>Market Pressure</span><span id="pressureTime" class="muted">Live</span></h2>
+        <div id="pressure" class="error">Waiting for book and trade flow...</div>
+      </section>
+      <section class="panel watchlist-panel" data-panel-id="watchlist" draggable="true">
+        <h2>
+          <span>Watchlist</span>
+          <span class="watchlist-tools">
+            <select id="watchListSelect" title="Saved watchlist"></select>
+            <input id="watchListName" class="watchlist-name" placeholder="List name">
+            <button id="watchListSaveName" type="button">Save List</button>
+            <button id="watchListNew" type="button">New</button>
+            <button id="watchListDelete" type="button">Delete</button>
+            <input id="watchAddSymbol" placeholder="Add symbol">
+            <button id="watchAdd" type="button">Add</button>
+            <button id="watchAddCurrent" type="button">Add Current</button>
+            <input id="watchFilter" placeholder="Filter saved">
+            <select id="watchSort">
+              <option value="price_change_pct:desc">24h Up</option>
+              <option value="price_change_pct:asc">24h Down</option>
+              <option value="range_15m_pct:desc">15m Range</option>
+              <option value="scan_price_change_pct:desc">Scan Up</option>
+              <option value="scan_price_change_pct:asc">Scan Down</option>
+              <option value="funding_rate:desc">Funding High</option>
+              <option value="funding_rate:asc">Funding Low</option>
+              <option value="quote_volume:desc">Volume</option>
+              <option value="quote_volume_15m_delta:desc">Vol Delta</option>
+              <option value="symbol:asc">Symbol</option>
+            </select>
+            <details class="column-menu">
+              <summary>Columns</summary>
+              <div id="watchColumnControls" class="column-options"></div>
+            </details>
+            <span id="watchStatus" class="muted">Loading</span>
+          </span>
+        </h2>
+        <div class="scroll">
+          <table class="watchlist-table">
+            <colgroup id="watchCols"></colgroup>
+            <thead id="watchHead"></thead>
+            <tbody id="watchRows"></tbody>
+          </table>
+        </div>
+        <div id="watchRowMenu" class="watch-row-menu" hidden></div>
+      </section>
+      </div>
+    </div>
+  </main>
+  <script>window.BITUNIX_SYMBOL = __SYMBOL_JSON__;</script>
+  <script src="__HOME_WIDGETS_JS__"></script>
+  <script src="__SYMBOL_WIDGETS_JS__"></script>
+  <script src="__SYMBOL_JS__"></script>
+</body>
+</html>

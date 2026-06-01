@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bitunix Perp Scanner</title>
+  <link rel="stylesheet" href="__HOME_CSS__">
+</head>
+<body>
+  <header>
+    <h1>Bitunix Perp Scanner</h1>
+    <div class="toolbar">
+      <input id="filter" placeholder="Search symbol">
+      <select id="sort">
+        <option value="quote_volume:desc">Volume High</option>
+        <option value="quote_volume:asc">Volume Low</option>
+        <option value="last_price:desc">Last High</option>
+        <option value="last_price:asc">Last Low</option>
+        <option value="price_change_pct:desc">24h Up</option>
+        <option value="price_change_pct:asc">24h Down</option>
+        <option value="scanner_ath_distance_pct:desc">Near High</option>
+        <option value="scanner_ath_distance_pct:asc">Deepest ATH Drop</option>
+        <option value="scanner_ath_rebound_pct:desc">ATH Rebound High</option>
+        <option value="scanner_ath_age_days:desc">Days From High</option>
+        <option value="scanner_ath_streak_days:desc">ATH Streak</option>
+        <option value="scanner_move_30d_pct:desc">30d Move High</option>
+        <option value="scanner_move_90d_pct:desc">90d Move High</option>
+        <option value="range_15m_pct:desc">15m Range High</option>
+        <option value="range_15m_pct:asc">15m Range Low</option>
+        <option value="scanner_flush_score:desc">V Score High</option>
+        <option value="scanner_flush_drop_pct:asc">Flush Deepest</option>
+        <option value="scanner_flush_rebound_pct:desc">Reclaim High</option>
+        <option value="scanner_ai_cycle_score:desc">AI Cycle High</option>
+        <option value="scanner_ai_cycle_week_drop_pct:asc">Week Drop Deepest</option>
+        <option value="scanner_ai_cycle_bounce_days_7d:desc">Bid Days High</option>
+        <option value="scanner_ai_cycle_reclaim_pct:desc">AI Reclaim High</option>
+        <option value="scan_price_change_pct:desc">Scan Up</option>
+        <option value="scan_price_change_pct:asc">Scan Down</option>
+        <option value="funding_rate:desc">Funding High</option>
+        <option value="funding_rate:asc">Funding Low</option>
+        <option value="quote_volume_15m_delta:desc">Vol Δ High</option>
+        <option value="quote_volume_15m_delta:asc">Vol Δ Low</option>
+        <option value="max_leverage:desc">Max Lev High</option>
+        <option value="max_leverage:asc">Max Lev Low</option>
+        <option value="status:asc">Status A-Z</option>
+        <option value="status:desc">Status Z-A</option>
+        <option value="symbol:asc">Symbol A-Z</option>
+        <option value="symbol:desc">Symbol Z-A</option>
+      </select>
+      <button id="scannerOnly">Scanner Only</button>
+      <button id="fullscreen">Fullscreen</button>
+      <button id="layoutToggle">Layout</button>
+      <button id="layoutReset">Reset Layout</button>
+      <div class="workspace-controls">
+        <label for="workspaceName">Workspace</label>
+        <select id="workspaceSelect"></select>
+        <input id="workspaceName" class="workspace-name" placeholder="Name">
+        <button id="workspaceSave" type="button">Save</button>
+        <button id="workspaceBlank" type="button">Blank Window</button>
+        <button id="workspaceDelete" type="button">Delete</button>
+      </div>
+      <details class="widget-menu">
+        <summary>Widgets</summary>
+        <div id="widgetControls" class="widget-options"></div>
+      </details>
+      <button id="scan">Scan Now</button>
+      <span id="status" class="muted">Loading...</span>
+      <div class="brightness-control">
+        <label for="brightnessSlider" title="Darken background">Dark</label>
+        <input id="brightnessSlider" type="range" min="0" max="100" value="0" title="Darken background (0=normal, 100=black)">
+      </div>
+      <div class="window-controls" aria-label="Window controls">
+        <button type="button" data-zoom-action="out" title="Zoom out">-</button>
+        <button type="button" data-zoom-action="reset" title="Reset zoom">100</button>
+        <button type="button" data-zoom-action="in" title="Zoom in">+</button>
+        <button type="button" data-window-action="minimize" title="Minimize">_</button>
+        <button type="button" data-window-action="toggle-maximize" title="Maximize or restore">[]</button>
+        <button type="button" data-window-action="close" title="Close">X</button>
+      </div>
+    </div>
+  </header>
+  <main>
+    <section class="control-center" id="controlCenter">
+      <h2><span>Control Center</span><span class="muted">Open focused windows and build workspaces from widgets.</span></h2>
+      <div class="control-actions">
+        <button id="controlScannerWorkspace" type="button">Scanner Workspace</button>
+        <button id="controlBlankWorkspace" type="button">Blank Workspace</button>
+        <button id="controlAlertsWindow" type="button">Alerts Window</button>
+        <button id="controlSaveSession" type="button">Save Session</button>
+        <span class="control-symbol">
+          <input id="controlSymbol" placeholder="Symbol" value="BTCUSDT">
+          <button id="controlDataWindow" type="button">Data Window</button>
+        </span>
+      </div>
+      <details class="control-alert-settings">
+        <summary><span>Event Watch Settings</span><span id="alertAudioState" class="muted">Voice ready</span></summary>
+        <div class="scanner-setting-groups">
+          <div class="scanner-setting-group">
+            <h3>Alerting</h3>
+            <div class="alert-settings-grid">
+              <label><span>Master</span><select id="alertMaster"><option value="on">On</option><option value="off">Off</option></select></label>
+              <label><span>Voice</span><select id="alertVoice"><option value="on">On</option><option value="off">Off</option></select></label>
+              <label><span>Beep</span><select id="alertBeep"><option value="off">Off</option><option value="on">On</option></select></label>
+              <label><span>Cooldown sec</span><input id="alertCooldown" inputmode="numeric" value="300"></label>
+            </div>
+          </div>
+          <div class="scanner-setting-group">
+            <h3>Universe</h3>
+            <div class="alert-settings-grid">
+              <label><span>Scope</span><select id="alertUniverse"><option value="all">All open perps</option><option value="watchlist">Saved watchlist</option><option value="high_watch">Event watch only</option><option value="new_or_ath">New/near ATH</option></select></label>
+              <label><span>Symbols</span><input id="alertSymbols" placeholder="All or XRP,BTC"></label>
+              <label><span>Status</span><select id="alertStatus"><option value="OPEN">Open only</option><option value="ANY">Any status</option></select></label>
+            </div>
+          </div>
+          <div class="scanner-setting-group">
+            <h3>Liquidity / Cap</h3>
+            <div class="alert-settings-grid">
+              <label><span>Min 24h vol</span><input id="alertMinVolume" inputmode="numeric" value="0"></label>
+              <label><span>Vol spike USDT</span><input id="alertVolumeDelta" inputmode="numeric" value="250000"></label>
+              <label class="disabled-setting"><span>Market cap</span><input id="alertMarketCap" disabled value="Needs external cap feed"></label>
+            </div>
+          </div>
+          <div class="scanner-setting-group">
+            <h3>Price / Leverage</h3>
+            <div class="alert-settings-grid">
+              <label><span>Min price</span><input id="alertMinPrice" inputmode="decimal" value="0"></label>
+              <label><span>Max price</span><input id="alertMaxPrice" inputmode="decimal" value="0"></label>
+              <label><span>Min leverage</span><input id="alertMinLeverage" inputmode="numeric" value="0"></label>
+            </div>
+          </div>
+          <div class="scanner-setting-group">
+            <h3>Volatility</h3>
+            <div class="alert-settings-grid">
+              <label><span>5m move %</span><input id="alertFastMovePct" inputmode="decimal" value="3"></label>
+              <label><span>15m range %</span><input id="alertRangePct" inputmode="decimal" value="8"></label>
+              <label><span>24h range %</span><input id="alertDailyRangePct" inputmode="decimal" value="15"></label>
+            </div>
+          </div>
+          <div class="scanner-setting-group">
+            <h3>Momentum / Events</h3>
+            <div class="alert-settings-grid">
+              <label><span>24h move %</span><input id="alertMove24Pct" inputmode="decimal" value="20"></label>
+              <label><span>Funding %</span><input id="alertFundingPct" inputmode="decimal" value="1"></label>
+              <label><span>Near ATH %</span><input id="alertNearAthPct" inputmode="decimal" value="20"></label>
+            </div>
+          </div>
+        </div>
+        <div class="alert-rule-actions">
+          <label class="alert-rule-master"><input id="alertRulesMaster" type="checkbox" checked> Event Data Points</label>
+          <button id="alertRulesAll" type="button">All</button>
+          <button id="alertRulesNone" type="button">None</button>
+        </div>
+        <div class="alert-rule-grid">
+          <label><input id="ruleNewListing" type="checkbox" checked> New listings</label>
+          <label><input id="ruleFastMove" type="checkbox" checked> 5m move</label>
+          <label><input id="ruleRange" type="checkbox" checked> 15m range expansion</label>
+          <label><input id="ruleDailyRange" type="checkbox" checked> 24h range / ADR proxy</label>
+          <label><input id="ruleVolume" type="checkbox" checked> Volume spike</label>
+          <label><input id="ruleMove24" type="checkbox" checked> 24h mover</label>
+          <label><input id="ruleFunding" type="checkbox" checked> Funding extreme</label>
+          <label><input id="ruleAth" type="checkbox" checked> New/near ATH</label>
+        </div>
+        <div class="alert-settings-actions">
+          <button id="alertSettingsSave" type="button">Save Event Watch</button>
+          <button id="alertSettingsTest" type="button">Test Voice</button>
+          <button id="alertSettingsClear" type="button">Clear Local Alerts</button>
+        </div>
+      </details>
+    </section>
+    <div class="workspace-dock" id="workspaceDock" hidden>
+      <button id="dockLayoutToggle" type="button">Layout</button>
+      <input id="dockSymbol" class="dock-symbol" placeholder="Symbol" value="BTCUSDT">
+      <details class="widget-menu dock-widget-menu">
+        <summary>Widgets</summary>
+        <div id="dockWidgetControls" class="widget-options"></div>
+      </details>
+      <button id="dockWorkspaceSave" type="button">Save</button>
+      <button id="dockLayoutReset" type="button">Reset</button>
+      <span id="dockWorkspaceName" class="muted"></span>
+    </div>
+    <div class="columns" id="dashboardPanels">
+      <section class="panel metrics-panel" data-panel-id="metrics" draggable="true">
+        <h2><span>Scanner Stats</span></h2>
+        <div class="metrics">
+          <div class="metric"><strong id="marketCount">0</strong><span>Markets</span></div>
+          <div class="metric"><strong id="openCount">0</strong><span>Open</span></div>
+          <div class="metric"><strong id="alertCount">0</strong><span>Recent Alerts</span></div>
+          <div class="metric"><strong id="lastScan">-</strong><span>Last Scan</span></div>
+        </div>
+      </section>
+      <section class="panel market-panel" data-panel-id="markets" draggable="true">
+        <h2>
+          <span>Markets</span>
+          <details class="column-menu">
+            <summary>Columns</summary>
+            <div id="marketColumnControls" class="column-options"></div>
+          </details>
+        </h2>
+        <div class="scroll">
+          <table>
+            <thead id="marketHead"></thead>
+            <tbody id="markets"></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="panel high-watch-panel" data-panel-id="highWatch" draggable="true">
+        <h2>
+          <span>Event Watch</span>
+          <span class="high-watch-tools">
+            <select id="highWatchMode">
+              <option value="near" selected>Near high events</option>
+              <option value="new">Fresh high events</option>
+              <option value="fallout">Fallout events</option>
+              <option value="saved">Saved events</option>
+              <option value="all">All event data</option>
+            </select>
+            <input id="highWatchAddSymbol" placeholder="Add symbol">
+            <button id="highWatchAdd" type="button">Add</button>
+            <span id="highWatchStatus" class="muted">Loading</span>
+          </span>
+        </h2>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr><th>Symbol</th><th>State</th><th>Last</th><th>High</th><th>Off High</th><th>Now</th><th>Streak</th><th>Max Drop</th><th>Rebound</th><th>30d</th><th>90d</th><th>Days</th><th>Save</th></tr>
+            </thead>
+            <tbody id="highWatchRows"></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="panel brief-panel" data-panel-id="brief" draggable="true"><h2><span>AI Brief</span></h2><div id="brief" class="brief">No brief yet.</div></section>
+      <section class="panel alerts-panel" data-panel-id="alerts" draggable="true"><h2><span>Event Alerts</span></h2><div id="alerts" class="alerts"></div></section>
+    </div>
+  </main>
+  <script src="__HOME_WIDGETS_JS__"></script>
+  <script src="__SYMBOL_WIDGETS_JS__"></script>
+  <script src="__HOME_JS__"></script>
+</body>
+</html>
