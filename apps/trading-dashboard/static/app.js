@@ -75,6 +75,27 @@ function renderDashboard() {
 
 /* -------------------------------------------------------------- indicators */
 
+// Build candlestick data with per-bar colors so we can offer the two styles the
+// user actually uses: solid (filled) and hollow (up candles are outline-only).
+function styleCandles(candles, style) {
+  return candles.map((c) => {
+    const point = { time: c.time, open: c.open, high: c.high, low: c.low, close: c.close };
+    const up = c.close >= c.open;
+    if (style === 'hollow') {
+      const edge = up ? '#22c55e' : '#ef4444';
+      point.color = up ? 'rgba(0,0,0,0)' : '#ef4444'; // hollow body when bullish
+      point.borderColor = edge;
+      point.wickColor = edge;
+    } else {
+      const solid = up ? '#22c55e' : '#ef4444';
+      point.color = solid;
+      point.borderColor = solid;
+      point.wickColor = up ? '#86efac' : '#fca5a5';
+    }
+    return point;
+  });
+}
+
 function ema(values, period) {
   const k = 2 / (period + 1);
   let prev;
@@ -185,7 +206,7 @@ function makeChart(element, options = {}) {
   return LightweightCharts.createChart(element, {
     autoSize: true,
     layout: { background: { color: '#0d1320' }, textColor: '#8ca0b8', fontSize: 11 },
-    grid: { vertLines: { color: '#151f31' }, horzLines: { color: '#151f31' } },
+    grid: { vertLines: { visible: false }, horzLines: { visible: false } },
     rightPriceScale: { borderColor: '#223044', scaleMargins: { top: 0.08, bottom: 0.08 } },
     timeScale: { borderColor: '#223044', timeVisible: true, secondsVisible: false },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
@@ -204,6 +225,7 @@ class Pane {
 
     this.symbolInput = element.querySelector('.symbol-input');
     this.timeframeSelect = element.querySelector('.timeframe-select');
+    this.styleSelect = element.querySelector('.style-select');
     this.checks = [...element.querySelectorAll('.indicator-menu input')];
     this.canvas = element.querySelector('.profile-canvas');
     this.priceEl = element.querySelector('.chart-area.price');
@@ -212,6 +234,7 @@ class Pane {
     const state = paneState[index] || DEFAULT_PANES[index];
     this.symbolInput.value = state.symbol;
     this.timeframeSelect.value = state.timeframe;
+    this.styleSelect.value = state.style || 'solid';
     this.checks.forEach((c) => { c.checked = state.studies.includes(c.value); });
 
     this.buildCharts();
@@ -223,13 +246,35 @@ class Pane {
     return this.checks.filter((c) => c.checked).map((c) => c.value);
   }
 
+  get style() {
+    return this.styleSelect.value;
+  }
+
+  persist() {
+    paneState[this.index] = {
+      symbol: this.symbolInput.value, timeframe: this.timeframeSelect.value,
+      style: this.style, studies: this.studies,
+    };
+    saveState();
+  }
+
+  renderCandles() {
+    this.candleSeries.setData(styleCandles(this.candles, this.style));
+  }
+
   buildCharts() {
     this.priceChart = makeChart(this.priceEl);
-    this.candleSeries = this.priceChart.addCandlestickSeries({
-      upColor: '#22c55e', downColor: '#ef4444',
-      borderUpColor: '#22c55e', borderDownColor: '#ef4444',
-      wickUpColor: '#86efac', wickDownColor: '#fca5a5',
+    this.priceChart.applyOptions({
+      watermark: { visible: true, color: 'rgba(140,160,184,0.10)', fontSize: 44, horzAlign: 'center', vertAlign: 'center' },
     });
+    // Volume is added first so it sits *behind* the candles, slid up onto the
+    // bottom of the price pane (no separate box at the bottom).
+    this.volumeSeries = this.priceChart.addHistogramSeries({
+      priceFormat: { type: 'volume' }, priceScaleId: 'volume', lastValueVisible: false, priceLineVisible: false,
+    });
+    this.priceChart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+
+    this.candleSeries = this.priceChart.addCandlestickSeries({ priceLineVisible: false });
     this.vwapSeries = this.priceChart.addLineSeries({ color: '#f472b6', lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
     this.ma20Series = this.priceChart.addLineSeries({ color: '#38bdf8', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
     this.ma50Series = this.priceChart.addLineSeries({ color: '#a78bfa', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
@@ -243,10 +288,6 @@ class Pane {
       bottomLineColor: '#ef4444', bottomFillColor1: 'rgba(239,68,68,.02)', bottomFillColor2: 'rgba(239,68,68,.28)',
       lineWidth: 2, priceLineVisible: false,
     });
-    this.volumeSeries = this.cvdChart.addHistogramSeries({
-      priceFormat: { type: 'volume' }, priceScaleId: 'vol', lastValueVisible: false,
-    });
-    this.cvdChart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.75, bottom: 0 } });
 
     this.syncTimeScales();
     this.redrawProfile = this.redrawProfile.bind(this);
@@ -279,29 +320,23 @@ class Pane {
   }
 
   wireControls() {
-    const update = () => {
-      const symbol = this.symbolInput.value.toUpperCase().trim() || 'BTC';
-      this.symbolInput.value = symbol;
-      paneState[this.index] = { symbol, timeframe: this.timeframeSelect.value, studies: this.studies };
-      saveState();
+    const reload = () => {
+      this.symbolInput.value = this.symbolInput.value.toUpperCase().trim() || 'BTC';
+      this.persist();
       this.load();
     };
-    this.symbolInput.addEventListener('change', update);
-    this.symbolInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') update(); });
-    this.timeframeSelect.addEventListener('change', update);
-    this.checks.forEach((c) => c.addEventListener('change', () => {
-      paneState[this.index] = {
-        symbol: this.symbolInput.value, timeframe: this.timeframeSelect.value, studies: this.studies,
-      };
-      saveState();
-      this.applyStudies();
-    }));
+    this.symbolInput.addEventListener('change', reload);
+    this.symbolInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') reload(); });
+    this.timeframeSelect.addEventListener('change', reload);
+    this.styleSelect.addEventListener('change', () => { this.persist(); this.renderCandles(); });
+    this.checks.forEach((c) => c.addEventListener('change', () => { this.persist(); this.applyStudies(); }));
   }
 
   async load() {
     const symbol = this.symbolInput.value.toUpperCase().trim() || 'BTC';
     const timeframe = this.timeframeSelect.value;
     this.element.querySelector('.pane-title').textContent = `${symbol} · ${timeframe}`;
+    this.priceChart.applyOptions({ watermark: { text: `${symbol} · ${timeframe}` } });
     this.element.querySelector('.pane-error').hidden = true;
     try {
       const params = new URLSearchParams({ symbol, timeframe });
@@ -309,9 +344,11 @@ class Pane {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const payload = await response.json();
       this.candles = payload.candles || [];
-      this.candleSeries.setData(this.candles.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
+      this.dayOpen = payload.dayOpen;
+      this.renderCandles();
       this.applyStudies();
-      this.priceChart.timeScale().fitContent();
+      // Only frame the data on the first load; don't yank the user's zoom on refresh.
+      if (!this.hasFitted) { this.priceChart.timeScale().fitContent(); this.hasFitted = true; }
       this.updateMeta(payload.source, payload.deltaReal);
     } catch (error) {
       const box = this.element.querySelector('.pane-error');
@@ -335,14 +372,16 @@ class Pane {
       this.ma20Series.setData([]); this.ma50Series.setData([]);
     }
 
-    const showCvd = studies.includes('cvd');
     const showVol = studies.includes('volume');
-    this.cvdSeries.setData(showCvd ? cumulativeDelta(this.candles) : []);
     this.volumeSeries.setData(showVol ? this.candles.map((c) => ({
-      time: c.time, value: c.volume, color: c.delta >= 0 ? COLORS.buy : COLORS.sell,
+      time: c.time, value: c.volume,
+      color: c.close >= c.open ? 'rgba(34,197,94,0.40)' : 'rgba(239,68,68,0.40)',
     })) : []);
-    this.cvdEl.style.display = showCvd || showVol ? '' : 'none';
-    this.element.classList.toggle('no-bottom', !(showCvd || showVol));
+
+    const showCvd = studies.includes('cvd');
+    this.cvdSeries.setData(showCvd ? cumulativeDelta(this.candles) : []);
+    this.cvdEl.style.display = showCvd ? '' : 'none';
+    this.element.classList.toggle('no-bottom', !showCvd);
 
     this.drawOrderBlocks(studies.includes('orderblocks'));
     this.redrawProfile();
@@ -358,6 +397,20 @@ class Pane {
     const last = this.candles[this.candles.length - 1];
     this.element.querySelector('.last-price').textContent = last
       ? last.close.toLocaleString(undefined, { maximumFractionDigits: 6 }) : 'No data';
+
+    // Change measured from today's daily-candle open (not a rolling 24h window).
+    const change = this.element.querySelector('.price-change');
+    if (last && this.dayOpen) {
+      const diff = last.close - this.dayOpen;
+      const pct = (diff / this.dayOpen) * 100;
+      const sign = diff >= 0 ? '+' : '';
+      change.textContent = `${sign}${pct.toFixed(2)}% (${sign}${diff.toLocaleString(undefined, { maximumFractionDigits: 6 })})`;
+      change.classList.toggle('up', diff >= 0);
+      change.classList.toggle('down', diff < 0);
+    } else {
+      change.textContent = '';
+    }
+
     const profile = buildProfile(this.candles);
     const stats = this.element.querySelector('.pane-stats');
     if (profile) {

@@ -140,7 +140,10 @@ main {
   border-bottom: 1px solid rgba(34, 48, 68, .6);
 }
 .pane-title { color: var(--text); }
-.last-price { color: var(--green); }
+.last-price { color: var(--text); font-variant-numeric: tabular-nums; }
+.price-change { font-size: .78rem; font-variant-numeric: tabular-nums; }
+.price-change.up { color: var(--green); }
+.price-change.down { color: var(--red); }
 .pane-stats { color: var(--amber); font-size: .72rem; }
 .data-source { margin-left: auto; font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; }
 .data-source.demo { color: var(--amber); }

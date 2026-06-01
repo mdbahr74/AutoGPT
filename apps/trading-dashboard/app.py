@@ -106,14 +106,43 @@ def get_candles(params: dict[str, list[str]]) -> dict[str, Any]:
         data = generate_demo_candles(symbol, timeframe)
         source, delta_real = "demo", False
 
+    day_open, prev_close = fetch_day_reference(pair, source, data)
+
     return {
         "symbol": symbol,
         "ticker": pair,
         "timeframe": timeframe,
         "source": source,
         "deltaReal": delta_real,
+        "dayOpen": day_open,
+        "prevClose": prev_close,
         "candles": data,
     }
+
+
+def fetch_day_reference(pair: str, source: str, candles: list) -> tuple[float | None, float | None]:
+    """Today's daily-candle open and the previous daily close, so the UI can show
+    the change the *daily candle* shows (open -> now) instead of a rolling 24h."""
+    try:
+        if source in ("binance", "binance.us"):
+            host = "https://api.binance.com" if source == "binance" else "https://api.binance.us"
+            rows = http_get_json(f"{host}/api/v3/klines?symbol={pair}&interval=1d&limit=2")
+            return float(rows[-1][1]), float(rows[-2][4])
+        if source in ("bybit", "bybit-perp"):
+            category = "linear" if source == "bybit-perp" else "spot"
+            payload = http_get_json(
+                f"https://api.bybit.com/v5/market/kline?category={category}&symbol={pair}&interval=D&limit=2"
+            )
+            rows = payload["result"]["list"]  # newest first
+            return float(rows[0][1]), float(rows[1][4])
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, KeyError, IndexError, TypeError):
+        pass
+    # Demo / fallback: derive from the current UTC day's candles if we can.
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    todays = [c for c in candles if c["time"] >= today]
+    if todays:
+        return todays[0]["open"], None
+    return (candles[-1]["open"] if candles else None), None
 
 
 def first(params: dict[str, list[str]], key: str, fallback: str) -> str:
