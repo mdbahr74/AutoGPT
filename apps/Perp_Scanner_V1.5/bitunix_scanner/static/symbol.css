@@ -374,6 +374,8 @@
     .dom-controls button { padding: 4px 7px; }
     .bookmap-panel { min-height: 310px; }
     .bookmap-panel .scroll { --bookmap-row-height: 23px; flex: 1 1 auto; max-height: none; min-height: 0; }
+    .bookmap-canvas-wrap { background: #0b0f12; flex: 1 1 auto; min-height: 240px; overflow: hidden; position: relative; }
+    #bookmapCanvas { cursor: crosshair; display: block; height: 100%; width: 100%; }
     .bookmap-controls { align-items: center; display: inline-flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
     .bookmap-controls button, .bookmap-controls input, .bookmap-controls select { padding: 4px 7px; }
     .bookmap-controls .impulse-price-input { max-width: 92px; width: 10ch; }

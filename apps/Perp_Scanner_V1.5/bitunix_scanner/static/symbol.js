@@ -473,7 +473,7 @@
         setElementHtml('bids', '');
         setElementHtml('domRows', '<tr><td colspan="5" class="muted">Loading symbol...</td></tr>');
         setElementHtml('trades', '<tr><td colspan="5" class="muted">Loading live tape...</td></tr>');
-        setElementHtml('bookmapRows', '<div class="error">Loading profile...</div>');
+        setElementText('bookmapStatus', 'Loading profile...');
         setElementText('tradeStatus', 'Loading live tape...');
         setElementText('bookTime', 'Loading book...');
         setElementText('liquidations', 'Loading...');
@@ -1711,7 +1711,9 @@
     }
 
     function visibleProfileRows(rows) {
-      const maxRows = rowCapacityFor('.bookmap-panel .scroll', 110, 24, 12);
+      const wrap = document.querySelector('.bookmap-canvas-wrap');
+      const height = wrap?.clientHeight || 320;
+      const maxRows = Math.max(24, Math.min(180, Math.floor(height / 6)));
       if (rows.length <= maxRows) return rows;
       const anchor = profileAnchorPrice();
       const current = lastTradePrice || Number(market?.last_price || 0);
@@ -1869,67 +1871,145 @@
       document.getElementById('profileDelta').textContent = compact.format(delta);
       document.getElementById('profileDelta').className = cls(delta);
       document.getElementById('profileTape').textContent = compact.format(totalTape);
-      document.getElementById('bookmapRows').innerHTML = visible.map(row => {
-        const isLast = row.price === lastBucket;
-        const isAnchor = row.price === anchorBucket || row.price === openBucket || row.price === closeBucket;
-        const isPoc = row.price === poc.price;
-        const isVwap = row.price === analytics.vwapBucket;
-        const isImpulseVwap = impulse.active && row.price === impulse.vwapBucket;
-        const isImpulseHvn = impulse.active && row.price === impulse.lowerHvnBucket;
-        const isImpulseAnchor = impulse.active && row.price === impulseAnchorBucket;
-        const isLvn = analytics.lvn.has(row.price);
-        const isHvn = analytics.hvn.has(row.price) && !isPoc;
-        const rowClass = [
-          isLast ? 'is-last' : '',
-          isAnchor ? 'is-anchor' : '',
-          isVwap ? 'is-vwap' : '',
-          isImpulseAnchor ? 'is-impulse-anchor' : '',
-          isImpulseVwap ? 'is-impulse-vwap' : '',
-          isImpulseHvn ? 'is-impulse-hvn' : '',
-          isPoc ? 'is-poc' : '',
-          isHvn ? 'is-hvn' : '',
-          isLvn ? 'is-lvn' : '',
-          row.price === bestAsk ? 'is-best-ask' : '',
-          row.price === bestBid ? 'is-best-bid' : ''
-        ].filter(Boolean).join(' ');
-        const track = mode === 'delta'
-          ? `<span class="bookmap-fill ${row.delta >= 0 ? 'delta-pos' : 'delta-neg'}" style="width:${Math.min(50, Math.abs(row.delta) / maxDelta * 50).toFixed(1)}%"></span>`
-          : `<span class="bookmap-half sell" style="width:${Math.min(100, row.sell / maxTotal * 100).toFixed(1)}%"></span><span class="bookmap-half buy" style="width:${Math.min(100, row.buy / maxTotal * 100).toFixed(1)}%"></span><span class="bookmap-fill volume" style="width:${Math.min(100, row.total / maxTotal * 100).toFixed(1)}%"></span>`;
-        const bookWidth = Math.min(100, (row.ask + row.bid) / maxBook * 100).toFixed(1);
-        const tags = [
-          isVwap ? '<span class="bookmap-tag vwap">VWAP</span>' : '',
-          isImpulseAnchor ? `<span class="bookmap-tag impulse-anchor">${impulse.positionSide ? 'ENTRY' : 'ANCHOR'}</span>` : '',
-          isImpulseVwap ? '<span class="bookmap-tag impulse-vwap">I-VWAP</span>' : '',
-          isImpulseHvn ? '<span class="bookmap-tag impulse-hvn">I-HVN</span>' : '',
-          isPoc ? '<span class="bookmap-tag poc">POC</span>' : '',
-          isHvn ? '<span class="bookmap-tag hvn">HVN</span>' : '',
-          isLvn ? '<span class="bookmap-tag lvn">LVN</span>' : '',
-          isAnchor ? '<span class="bookmap-tag anchor">D</span>' : ''
-        ].filter(Boolean).join('');
-        return `
-          <div class="bookmap-row ${rowClass}" ${isLast || isVwap || isImpulseVwap || isImpulseAnchor || row.price === bestBid || row.price === bestAsk ? 'data-profile-center="1"' : ''}>
-            <span class="bookmap-price">${row.price}</span>
-            <span class="bookmap-track">${track}</span>
-            <span>${row.total ? compact.format(row.total) : ''}</span>
-            <span class="${cls(row.delta)}">${row.delta ? compact.format(row.delta) : ''}</span>
-            <span class="bookmap-book" title="Current book quote liquidity">
-              <span class="bookmap-fill volume" style="width:${bookWidth}%;opacity:.28"></span>${row.ask + row.bid ? compact.format(row.ask + row.bid) : ''}
-            </span>
-            <span class="bookmap-tags">${tags}</span>
-          </div>`;
-      }).join('') || '<div class="error">Waiting for book and live prints...</div>';
-      fitRowsToScroller('.bookmap-panel .scroll', '#bookmapRows .bookmap-row', '--bookmap-row-height', 23, 44);
+      // ---- Bookmap-style canvas: horizontal volume histogram vs the price axis ----
+      const canvas = document.getElementById('bookmapCanvas');
+      if (!canvas) return;
+      const wrap = canvas.parentElement;
+      const width = Math.max(220, Math.floor(wrap?.clientWidth || canvas.clientWidth || 0));
+      const height = Math.max(180, Math.floor(wrap?.clientHeight || canvas.clientHeight || 0));
+      const dpr = window.devicePixelRatio || 1;
+      if (canvas.width !== Math.floor(width * dpr) || canvas.height !== Math.floor(height * dpr)) {
+        canvas.width = Math.floor(width * dpr);
+        canvas.height = Math.floor(height * dpr);
+      }
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      const ctx = canvas.getContext('2d');
+      const DATA_FONT = '"JetBrains Mono", ui-monospace, monospace';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      const bg = ctx.createLinearGradient(0, 0, 0, height);
+      bg.addColorStop(0, '#0b0f12');
+      bg.addColorStop(1, '#080b0e');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, width, height);
+
       const candleTime = dailyCandle?.time ? new Date(dailyCandle.time).toLocaleDateString() : 'market anchor';
-      document.getElementById('bookmapStatus').textContent = `${mode === 'delta' ? 'Delta' : 'Volume'} · ${rows.length} prices · ${candleTime}`;
-      if (document.getElementById('bookmapFollow')?.checked && !isWidgetResizeQuiet()) centerBookmapProfile();
+      const statusEl = document.getElementById('bookmapStatus');
+      if (!visible.length) {
+        ctx.fillStyle = '#9aa6b2';
+        ctx.font = `12px ${DATA_FONT}`;
+        ctx.fillText('Waiting for book and live prints...', 14, 26);
+        if (statusEl) statusEl.textContent = 'Waiting for tape';
+        return;
+      }
+
+      const top = 10;
+      const bottom = 12;
+      const plotLeft = 8;
+      const priceGutter = width < 360 ? 54 : 66;
+      const baseX = width - priceGutter - 6;       // price axis; bars grow left
+      const plotW = Math.max(70, baseX - plotLeft);
+      const plotH = Math.max(70, height - top - bottom);
+      const rowH = plotH / visible.length;
+      const barH = Math.max(1, rowH - Math.min(2.5, rowH * 0.18));
+      const yFor = index => top + index * rowH;
+      const rowIndex = new Map(visible.map((row, index) => [row.price, index]));
+      const yForPrice = price => {
+        const bucket = nearestProfileBucket(visible, price);
+        if (bucket === '') return null;
+        const index = rowIndex.get(bucket);
+        return index === undefined ? null : yFor(index) + rowH / 2;
+      };
+
+      // Bars: in volume mode buy sits against the axis (green) with sell stacked
+      // beyond it (red); in delta mode a single signed bar.
+      visible.forEach((row, index) => {
+        const y = yFor(index) + (rowH - barH) / 2;
+        const isPoc = row.price === poc.price;
+        if (mode === 'delta') {
+          const w = Math.min(plotW, Math.abs(row.delta) / maxDelta * plotW);
+          ctx.fillStyle = row.delta >= 0 ? 'rgba(46, 224, 111, .8)' : 'rgba(255, 85, 85, .8)';
+          ctx.fillRect(baseX - w, y, w, barH);
+        } else {
+          const totalW = Math.min(plotW, row.total / maxTotal * plotW);
+          const buyW = row.total ? totalW * (row.buy / row.total) : 0;
+          const sellW = totalW - buyW;
+          ctx.fillStyle = isPoc ? 'rgba(46, 224, 111, .98)' : 'rgba(46, 224, 111, .62)';
+          ctx.fillRect(baseX - buyW, y, buyW, barH);
+          ctx.fillStyle = isPoc ? 'rgba(255, 85, 85, .92)' : 'rgba(255, 85, 85, .56)';
+          ctx.fillRect(baseX - buyW - sellW, y, sellW, barH);
+        }
+        if (analytics.hvn.has(row.price) && !isPoc) {
+          ctx.fillStyle = 'rgba(139, 188, 255, .85)';
+          ctx.fillRect(baseX + 2, y, 3, barH);
+        } else if (analytics.lvn.has(row.price)) {
+          ctx.fillStyle = 'rgba(155, 124, 255, .9)';
+          ctx.fillRect(baseX + 2, y, 3, barH);
+        }
+      });
+
+      // price-axis baseline
+      ctx.strokeStyle = 'rgba(255,255,255,.14)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(baseX + 0.5, top);
+      ctx.lineTo(baseX + 0.5, top + plotH);
+      ctx.stroke();
+
+      // horizontal marker lines for the key levels
+      const hline = (price, color, label, dash = []) => {
+        const y = yForPrice(price);
+        if (y == null) return;
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.setLineDash(dash);
+        ctx.beginPath();
+        ctx.moveTo(plotLeft, y);
+        ctx.lineTo(baseX, y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        if (label) {
+          ctx.fillStyle = color;
+          ctx.font = `9px ${DATA_FONT}`;
+          ctx.textBaseline = 'middle';
+          ctx.textAlign = 'left';
+          ctx.fillText(label, plotLeft + 2, y - 0.5);
+        }
+        ctx.restore();
+      };
+      if (analytics.vwap) hline(analytics.vwap, 'rgba(110, 168, 254, .9)', 'VWAP');
+      if (poc.total) hline(Number(poc.price), 'rgba(242, 170, 76, .95)', 'POC');
+      if (impulse.active && impulse.vwap) hline(impulse.vwap, 'rgba(143, 194, 255, .85)', 'I-VWAP', [3, 3]);
+      if (lastTradePrice) hline(lastTradePrice, 'rgba(231, 237, 243, .55)', '', [2, 3]);
+
+      // price labels in the right gutter (key levels highlighted)
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'right';
+      const labelX = width - 6;
+      const labelStep = Math.max(1, Math.round(visible.length / Math.max(6, Math.floor(plotH / 16))));
+      visible.forEach((row, index) => {
+        const isKey = row.price === poc.price || row.price === analytics.vwapBucket || row.price === lastBucket;
+        if (index % labelStep !== 0 && !isKey) return;
+        const y = yFor(index) + rowH / 2;
+        const size = Math.max(9, Math.min(12, rowH * 0.62));
+        ctx.font = `${isKey ? '700 ' : ''}${size.toFixed(0)}px ${DATA_FONT}`;
+        ctx.fillStyle = row.price === poc.price ? '#f2aa4c'
+          : row.price === lastBucket ? '#e7edf3'
+          : row.price === analytics.vwapBucket ? '#6ea8fe'
+          : '#8aa0b4';
+        ctx.fillText(row.price, labelX, y);
+      });
+      ctx.textAlign = 'left';
+
+      if (statusEl) statusEl.textContent = `${mode === 'delta' ? 'Delta' : 'Volume'} · ${rows.length} prices · ${candleTime}`;
     }
 
     function centerBookmapProfile(force = false) {
       if (!force && isWidgetResizeQuiet()) return;
-      const scroller = document.querySelector('.bookmap-panel .scroll');
-      const target = document.querySelector('#bookmapRows [data-profile-center="1"]') || document.querySelector('#bookmapRows .is-anchor');
-      if (!scroller || !target) return;
-      scroller.scrollTop = Math.max(0, target.offsetTop - scroller.clientHeight / 2 + target.clientHeight / 2);
+      // The canvas profile re-centers its price window on the live price via
+      // visibleProfileRows(), so "center" just forces a fresh render.
+      scheduleBookmapProfile(true);
     }
 
     function liquidityWindowMs() {
