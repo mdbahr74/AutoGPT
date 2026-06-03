@@ -1,0 +1,415 @@
+//@version=6
+
+indicator("All-in-One Analysis Tool", shorttitle="AIO Tool", overlay=true)
+
+// =============================================================================
+//                      GLOBAL INPUTS & EARLY DEFS
+// =============================================================================
+// This input is needed for a global function, so it must be defined globally.
+string vp_GRANULARITY_GROUP_GLOBAL = "Anchored/Visible Range VP | Granularity"
+bool vp_USE_SECOND_BASED_TIMEFRAMES = input.bool(false, 'Use Second-Based Timeframes', group = vp_GRANULARITY_GROUP_GLOBAL)
+int vp_MIN_TIMEFRAME_IN_SECONDS = vp_USE_SECOND_BASED_TIMEFRAMES ? 1 : 60
+
+// =============================================================================
+//                      GLOBAL TYPE AND FUNCTION DECLARATIONS
+// =============================================================================
+
+// MA Module Function
+f_get_ma(src, length, ma_type) =>
+    switch ma_type
+        "SMA" => ta.sma(src, length)
+        "EMA" => ta.ema(src, length)
+        "WMA" => ta.wma(src, length)
+        "RMA" => ta.rma(src, length)
+        "HMA" => ta.hma(src, length)
+        => na
+
+// VP Module Functions & Types
+vp_f_contrastColor(color bgColor) =>
+    r = color.r(bgColor)
+    g = color.g(bgColor)
+    b = color.b(bgColor)
+    lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    lum > 0.5 ? color.black : color.white
+
+string vp_ltf(int multiplier) =>
+    int seconds = int(math.max(vp_MIN_TIMEFRAME_IN_SECONDS, math.round(timeframe.in_seconds() / multiplier)))
+    timeframe.from_seconds(seconds)
+
+vp_maxIndex(array<float> a) =>
+    float maxVal = na
+    int maxIdx = na
+    if a.size() > 0
+        maxVal := a.get(0)
+        maxIdx := 0
+        for i = 1 to a.size() - 1
+            if a.get(i) > maxVal
+                maxVal := a.get(i)
+                maxIdx := i
+    maxIdx
+
+type vp_Candle
+    float high
+    float low
+    float volume = 1
+    int direction
+
+type vp_Marker
+    polyline poly
+    line extendedLine
+    label label
+
+type vp_VP
+    array<vp_Candle> candles
+    float minPrice
+    float maxPrice
+    float step
+    polyline poly
+    polyline buyPoly
+    polyline sellPoly
+    map<string, vp_Marker> markers
+
+method set(vp_Marker this, string name, int left, int right, float price, color bg, float height, bool vp_EXTEND_LEFT, int vp_LABEL_OFFSET) =>
+    if not na(this.poly)
+        this.poly.delete()
+    float bottom = price - height / 2
+    float top = bottom + height
+    this.poly := polyline.new(array.from(chart.point.from_index(left, bottom), chart.point.from_index(left, top), chart.point.from_index(right, top), chart.point.from_index(right, bottom)), line_color = bg, fill_color = bg)
+    if not na(this.extendedLine)
+        this.extendedLine.delete()
+    if vp_EXTEND_LEFT
+        this.extendedLine := line.new(x1 = left, y1 = price, x2 = right, y2 = price, extend = extend.left, style = line.style_dotted, color = bg)
+    if not na(this.label)
+        this.label.delete()
+    string txt = str.format('{0}: {1}', name, math.round_to_mintick(price))
+    this.label := label.new(x = bar_index + vp_LABEL_OFFSET, y = price, text = txt, style = label.style_label_left, size = size.small, color = bg, textcolor = vp_f_contrastColor(bg))
+
+method init(vp_VP this) =>
+    this.candles := array.new<vp_Candle>()
+    this.markers := map.new<string, vp_Marker>()
+
+method getBucketIndex(vp_VP this, float price, int vp_NUM_ROWS) =>
+    math.min(math.floor((price - this.minPrice) / this.step), vp_NUM_ROWS - 1)
+
+method getBucketedPrice(vp_VP this, int index) =>
+    (index + 0.5) * this.step + this.minPrice
+
+method mark(vp_VP this, string name, float price, int left, color bg, float height, int vp_BASE_OFFSET, bool vp_EXTEND_LEFT, int vp_LABEL_OFFSET) =>
+    int right = bar_index + vp_BASE_OFFSET
+    vp_Marker marker = this.markers.get(name)
+    if na(marker)
+        marker := vp_Marker.new()
+    marker.set(name, left, right, price, bg, height, vp_EXTEND_LEFT, vp_LABEL_OFFSET)
+    this.markers.put(name, marker)
+
+method store(vp_VP this, vp_Candle candle, int vp_NUM_ROWS) =>
+    this.candles.push(candle)
+    this.minPrice := na(this.minPrice) ? candle.low : math.min(this.minPrice, candle.low)
+    this.maxPrice := na(this.maxPrice) ? candle.high : math.max(this.maxPrice, candle.high)
+    this.step := (this.maxPrice - this.minPrice) / vp_NUM_ROWS
+
+method drawHistogram(vp_VP this, array<int> xs, int baseX, float step, float height, color color) =>
+    array<chart.point> points = array.new<chart.point>()
+    float gap = (step - height) / 2
+    for i = 0 to xs.size() - 1
+        x = xs.get(i)
+        float lo = i * step + gap + this.minPrice
+        float hi = lo + height
+        points.push(chart.point.from_index(baseX, lo))
+        points.push(chart.point.from_index(x, lo))
+        points.push(chart.point.from_index(x, hi))
+        points.push(chart.point.from_index(baseX, hi))
+    polyline.new(points, closed = true, line_color = color, fill_color = color)
+
+method update(vp_VP this, int vp_NUM_ROWS, int vp_MAX_WIDTH, int vp_HEIGHT_PERCENTAGE_PER_ROW, color vp_COLOR, bool vp_SHOW_DELTA, color vp_BUY_COLOR, color vp_SELL_COLOR, bool vp_DISPLAY_VA, int vp_VALUE_AREA_PERCENT, color vp_VAL_COLOR, color vp_VAH_COLOR, bool vp_DISPLAY_POC, color vp_POC_COLOR, int vp_BASE_OFFSET, bool vp_EXTEND_LEFT, int vp_LABEL_OFFSET) =>
+    float step = (this.maxPrice - this.minPrice) / vp_NUM_ROWS
+    array<float> dist = array.new_float(vp_NUM_ROWS, 0)
+    array<float> deltaDist = array.new_float(vp_NUM_ROWS, 0)
+    for c in this.candles
+        int start = this.getBucketIndex(c.low, vp_NUM_ROWS)
+        int end = this.getBucketIndex(c.high, vp_NUM_ROWS)
+        int buckets = end - start + 1
+        float vol = c.volume / buckets
+        for i = start to end
+            dist.set(i, dist.get(i) + vol)
+            deltaDist.set(i, deltaDist.get(i) + vol * c.direction)
+    float maxVol = dist.max()
+    int baseX = bar_index + vp_BASE_OFFSET
+    array<int> xs = array.new_int()
+    for vol in dist
+        int width = na(maxVol) or maxVol == 0 ? 0 : math.round(vol / maxVol * vp_MAX_WIDTH)
+        int x = baseX - width
+        xs.push(x)
+    float height = vp_HEIGHT_PERCENTAGE_PER_ROW / 100 * step
+    if not na(this.poly)
+        this.poly.delete()
+    this.poly := this.drawHistogram(xs, baseX, step, height, vp_COLOR)
+    if vp_SHOW_DELTA
+        array<int> buyXs = array.new_int()
+        array<int> sellXs = array.new_int()
+        for vol in deltaDist
+            int width = na(maxVol) or maxVol == 0 ? 0 : math.round(math.abs(vol) / maxVol * vp_MAX_WIDTH)
+            int x = baseX - width
+            buyXs.push(vol > 0 ? x : baseX)
+            sellXs.push(vol < 0 ? x : baseX)
+        if not na(this.buyPoly)
+            this.buyPoly.delete()
+        this.buyPoly := this.drawHistogram(buyXs, baseX, step, height, vp_BUY_COLOR)
+        if not na(this.sellPoly)
+            this.sellPoly.delete()
+        this.sellPoly := this.drawHistogram(sellXs, baseX, step, height, vp_SELL_COLOR)
+    array<float> cumdist = dist.copy()
+    for i = 1 to cumdist.size() - 1
+        cumdist.set(i, cumdist.get(i - 1) + cumdist.get(i))
+    float totalVolume = cumdist.last()
+    if vp_DISPLAY_VA and not na(totalVolume)
+        float valPercentile = (100 - vp_VALUE_AREA_PERCENT) / 100 / 2
+        float vahPercentile = 1 - valPercentile
+        int valIndex = cumdist.binary_search_leftmost(totalVolume * valPercentile)
+        this.mark('VAL', this.getBucketedPrice(valIndex), xs.get(valIndex), vp_VAL_COLOR, height, vp_BASE_OFFSET, vp_EXTEND_LEFT, vp_LABEL_OFFSET)
+        int vahIndex = cumdist.binary_search_leftmost(totalVolume * vahPercentile)
+        this.mark('VAH', this.getBucketedPrice(vahIndex), xs.get(vahIndex), vp_VAH_COLOR, height, vp_BASE_OFFSET, vp_EXTEND_LEFT, vp_LABEL_OFFSET)
+    if vp_DISPLAY_POC
+        int pocIndex = vp_maxIndex(dist)
+        if not na(pocIndex)
+            this.mark('POC', this.getBucketedPrice(pocIndex), xs.get(pocIndex), vp_POC_COLOR, height, vp_BASE_OFFSET, vp_EXTEND_LEFT, vp_LABEL_OFFSET)
+    polyline.new(array.from(chart.point.from_index(baseX, this.maxPrice), chart.point.from_index(baseX, this.minPrice)), line_color = chart.bg_color)
+
+// SMC Module Types & Functions
+type smc_alerts
+    bool internalBullishBOS
+    bool internalBearishBOS
+    bool internalBullishCHoCH
+    bool internalBearishCHoCH
+    bool swingBullishBOS
+    bool swingBearishBOS
+    bool swingBullishCHoCH
+    bool swingBearishCHoCH
+    bool internalBullishOrderBlock
+    bool internalBearishOrderBlock
+    bool swingBullishOrderBlock
+    bool swingBearishOrderBlock
+    bool equalHighs
+    bool equalLows
+    bool bullishFairValueGap
+    bool bearishFairValueGap
+type smc_trailingExtremes
+    float top
+    float bottom
+    int barTime
+    int barIndex
+    int lastTopTime
+    int lastBottomTime
+type smc_fairValueGap
+    float top
+    float bottom
+    int bias
+    box topBox
+    box bottomBox
+type smc_trend
+    int bias
+type smc_equalDisplay
+    line l_ine = na
+    label l_abel = na
+type smc_pivot
+    float currentLevel
+    float lastLevel
+    bool crossed
+    int barTime = time
+    int barIndex = bar_index
+type smc_orderBlock
+    float barHigh
+    float barLow
+    int barTime
+    int bias
+
+smc_leg(size) =>
+    var leg = 0
+    newLegHigh = high[size] > ta.highest(size)
+    newLegLow = low[size] < ta.lowest(size)
+    if newLegHigh
+        leg := 0 // BEARISH_LEG
+    else if newLegLow
+        leg := 1 // BULLISH_LEG
+    leg
+smc_startOfNewLeg(leg) => ta.change(leg) != 0
+smc_startOfBearishLeg(leg) => ta.change(leg) == -1
+smc_startOfBullishLeg(leg) => ta.change(leg) == 1
+smc_getStyle(style) =>
+    switch style
+        '⎯⎯⎯' => line.style_solid
+        '----' => line.style_dashed
+        '····' => line.style_dotted
+        => na
+smc_higherTimeframe(tf) => timeframe.in_seconds(tf) > timeframe.in_seconds(timeframe.period)
+
+// SP Module Functions
+sp_get_vol(y11, y12, y21, y22, height, vol) => 
+    nz(math.max(math.min(math.max(y11, y12), math.max(y21, y22)) - math.max(math.min(y11, y12), math.min(y21, y22)), 0) * vol / height)
+
+
+// =============================================================================
+//                      1. MASTER ON/OFF SWITCHES
+// =============================================================================
+string master_group = "Master On/Off Switches"
+bool show_mas_vwap = input.bool(true, "Show MAs & VWAP", group=master_group, tooltip="Master switch for all Moving Averages and the VWAP.")
+bool show_vp = input.bool(false, "Show Anchored/Visible Range VP", group=master_group, tooltip="Master switch for the advanced Volume Profile. Note: This is resource-intensive and may slow down the chart.")
+bool show_smc = input.bool(true, "Show Smart Money Concepts", group=master_group, tooltip="Master switch for Order Blocks, Market Structure, Fair Value Gaps, etc.")
+bool show_sp = input.bool(true, "Show Session Profile", group=master_group, tooltip="Master switch for the session-based Volume Profile (Daily, Weekly, etc.).")
+input.string("", "─────────────────", group = master_group, tooltip="Visually separates the different indicator modules in the settings.")
+
+
+// =============================================================================
+//                      2. MOVING AVERAGES & VWAP MODULE
+// =============================================================================
+string mav_group = "Moving Averages & VWAP"
+string mav_g1 = mav_group + " | MA 1"
+bool mav_ma1_enabled = input.bool(true, "Enable MA1", group=mav_g1, inline="MA1")
+string mav_ma1_type = input.string("SMA", "Type", options=["SMA", "EMA", "WMA", "RMA", "HMA"], group=mav_g1, inline="MA1")
+int mav_ma1_length = input.int(9, "Length", minval=1, group=mav_g1, inline="MA1")
+color mav_ma1_color = input.color(color.red, "Color", group=mav_g1, inline="MA1")
+string mav_g2 = mav_group + " | MA 2"
+bool mav_ma2_enabled = input.bool(true, "Enable MA2", group=mav_g2, inline="MA2")
+string mav_ma2_type = input.string("EMA", "Type", options=["SMA", "EMA", "WMA", "RMA", "HMA"], group=mav_g2, inline="MA2")
+int mav_ma2_length = input.int(21, "Length", minval=1, group=mav_g2, inline="MA2")
+color mav_ma2_color = input.color(color.blue, "Color", group=mav_g2, inline="MA2")
+string mav_g3 = mav_group + " | MA 3"
+bool mav_ma3_enabled = input.bool(true, "Enable MA3", group=mav_g3, inline="MA3")
+string mav_ma3_type = input.string("SMA", "Type", options=["SMA", "EMA", "WMA", "RMA", "HMA"], group=mav_g3, inline="MA3")
+int mav_ma3_length = input.int(50, "Length", minval=1, group=mav_g3, inline="MA3")
+color mav_ma3_color = input.color(color.green, "Color", group=mav_g3, inline="MA3")
+string mav_g4 = mav_group + " | MA 4"
+bool mav_ma4_enabled = input.bool(true, "Enable MA4", group=mav_g4, inline="MA4")
+string mav_ma4_type = input.string("SMA", "Type", options=["SMA", "EMA", "WMA", "RMA", "HMA"], group=mav_g4, inline="MA4")
+int mav_ma4_length = input.int(100, "Length", minval=1, group=mav_g4, inline="MA4")
+color mav_ma4_color = input.color(color.orange, "Color", group=mav_g4, inline="MA4")
+string mav_g5 = mav_group + " | MA 5"
+bool mav_ma5_enabled = input.bool(true, "Enable MA5", group=mav_g5, inline="MA5")
+string mav_ma5_type = input.string("SMA", "Type", options=["SMA", "EMA", "WMA", "RMA", "HMA"], group=mav_g5, inline="MA5")
+int mav_ma5_length = input.int(200, "Length", minval=1, group=mav_g5, inline="MA5")
+color mav_ma5_color = input.color(color.purple, "Color", group=mav_g5, inline="MA5")
+string mav_g6 = mav_group + " | VWAP"
+bool mav_vwap_enabled = input.bool(true, "Enable VWAP", group=mav_g6)
+color mav_vwap_color = input.color(color.white, "Color", group=mav_g6)
+
+float mav_ma1 = f_get_ma(close, mav_ma1_length, mav_ma1_type)
+float mav_ma2 = f_get_ma(close, mav_ma2_length, mav_ma2_type)
+float mav_ma3 = f_get_ma(close, mav_ma3_length, mav_ma3_type)
+float mav_ma4 = f_get_ma(close, mav_ma4_length, mav_ma4_type)
+float mav_ma5 = f_get_ma(close, mav_ma5_length, mav_ma5_type)
+float mav_vwap_value = ta.vwap(hlc3)
+plot(show_mas_vwap and mav_ma1_enabled ? mav_ma1 : na, color=mav_ma1_color, linewidth=2, title="MA1")
+plot(show_mas_vwap and mav_ma2_enabled ? mav_ma2 : na, color=mav_ma2_color, linewidth=2, title="MA2")
+plot(show_mas_vwap and mav_ma3_enabled ? mav_ma3 : na, color=mav_ma3_color, linewidth=2, title="MA3")
+plot(show_mas_vwap and mav_ma4_enabled ? mav_ma4 : na, color=mav_ma4_color, linewidth=2, title="MA4")
+plot(show_mas_vwap and mav_ma5_enabled ? mav_ma5 : na, color=mav_ma5_color, linewidth=2, title="MA5")
+plot(show_mas_vwap and mav_vwap_enabled ? mav_vwap_value : na, color=mav_vwap_color, linewidth=2, title="VWAP")
+
+
+// =============================================================================
+//                      3. ADVANCED VOLUME PROFILE MODULE
+// =============================================================================
+if (show_vp)
+    string vp_group = "Anchored/Visible Range VP"
+    string vp_MODE = input.string('Volume Profile', 'Mode', options = ['Volume Profile', 'Market Profile / TPO'], group = vp_group)
+    string vp_RANGE_GROUP = vp_group + " | Time Range"
+    string vp_RANGE_MODE = input.string('Visible Range', 'Range Mode', options = ['Visible Range', 'Anchored Range', 'All Range'], group = vp_RANGE_GROUP)
+    int vp_ANCHORED_TIME = input.time(timestamp('2023-01-01T12:00:00'), 'Anchor Time', group = vp_RANGE_GROUP)
+    string vp_GRANULARITY_GROUP = "Anchored/Visible Range VP | Granularity" // Redefine for local use
+    int vp_NUM_ROWS = input.int(300, 'Number of Rows', minval = 100, maxval = 2500, step = 100, group = vp_GRANULARITY_GROUP)
+    int vp_MAX_LTF_BARS = input.int(5000, 'Max Lower Timeframe Bars', minval = 1000, step = 1000, group = vp_GRANULARITY_GROUP)
+    string vp_APPEARANCE_GROUP = vp_group + " | Appearance"
+    int vp_HORIZONTAL_OFFSET = input.int(20, 'Horizontal Offset', step = 5, group = vp_APPEARANCE_GROUP)
+    int vp_MAX_WIDTH = input.int(80, 'Max Width', maxval = 500, minval = 10, step = 10, group = vp_APPEARANCE_GROUP)
+    int vp_HEIGHT_PERCENTAGE_PER_ROW = input.int(40, 'Height % per Row', minval = 1, maxval = 100, group = vp_APPEARANCE_GROUP)
+    bool vp_SHOW_DELTA = input.bool(false, 'Show Volume Delta', group = vp_APPEARANCE_GROUP)
+    string vp_COLOR_GROUP = vp_group + " | Color"
+    color vp_COLOR = input.color(#5d606b77, 'Default', group = vp_COLOR_GROUP)
+    color vp_BUY_COLOR = input.color(#00bcd480, 'Buy Volume', group = vp_COLOR_GROUP)
+    color vp_SELL_COLOR = input.color(#e91e6380, 'Sell Volume', group = vp_COLOR_GROUP)
+    color vp_POC_COLOR = input.color(color.yellow, 'POC (Point of Control)', group = vp_COLOR_GROUP)
+    color vp_VAH_COLOR = input.color(color.blue, 'VAH (Value Area High)', group = vp_COLOR_GROUP)
+    color vp_VAL_COLOR = input.color(color.blue, 'VAL (Value Area Low)', group = vp_COLOR_GROUP)
+    string vp_KEY_PRICES_GROUP = vp_group + " | POC & Value Area"
+    int vp_VALUE_AREA_PERCENT = input.int(70, 'Value Area Percent', minval = 1, maxval = 100, group = vp_KEY_PRICES_GROUP)
+    bool vp_DISPLAY_VA = input.bool(true, 'Display VAH/VAL', group = vp_KEY_PRICES_GROUP)
+    bool vp_DISPLAY_POC = input.bool(true, 'Display POC', group = vp_KEY_PRICES_GROUP)
+    bool vp_EXTEND_LEFT = input.bool(true, 'Extend Key Price Lines to the Left', group = vp_KEY_PRICES_GROUP)
+
+    int vp_BASE_OFFSET = vp_HORIZONTAL_OFFSET + vp_MAX_WIDTH
+    int vp_LABEL_OFFSET = vp_BASE_OFFSET + 2
+    int vp_START_TIME = switch vp_RANGE_MODE
+        'Visible Range' => chart.left_visible_bar_time
+        'Anchored Range' => vp_ANCHORED_TIME
+        'All Range' => 0
+        => 0
+
+    var vp_VP vp_instance = vp_VP.new()
+    if barstate.isfirst
+        vp_instance.init()
+    
+    string vp_ltf1  = timeframe.period
+    string vp_ltf2  = vp_ltf(2)
+    string vp_ltf4  = vp_ltf(4)
+    string vp_ltf8  = vp_ltf(8)
+    string vp_ltf16 = vp_ltf(16)
+    
+    bool vp_canProcess = time >= vp_START_TIME and (last_bar_index - bar_index) < vp_MAX_LTF_BARS
+    
+    bool vp_cp1 = vp_canProcess
+    [vp_cp2_val] = request.security(syminfo.tickerid, vp_ltf2, vp_canProcess, ignore_invalid_symbol=true)
+    [vp_cp4_val] = request.security(syminfo.tickerid, vp_ltf4, vp_canProcess, ignore_invalid_symbol=true)
+    [vp_cp8_val] = request.security(syminfo.tickerid, vp_ltf8, vp_canProcess, ignore_invalid_symbol=true)
+    [vp_cp16_val] = request.security(syminfo.tickerid, vp_ltf16, vp_canProcess, ignore_invalid_symbol=true)
+    
+    int vp_dir = switch
+        close > open => 1
+        close < open => -1
+        => 0
+    float vp_vol = vp_MODE == 'Volume Profile' ? nz(volume, 100) : 100
+    
+    [o, h, l, c, v, d] = [open, high, low, close, vp_vol, vp_dir]
+    
+    var string vp_ltf_str = na
+    if na(vp_ltf_str)
+        vp_ltf_str := switch
+            vp_cp16_val => vp_ltf16
+            vp_cp8_val  => vp_ltf8
+            vp_cp4_val  => vp_ltf4
+            vp_cp2_val  => vp_ltf2
+            vp_cp1  => vp_ltf1
+            => na
+    
+    if not na(vp_ltf_str)
+        vp_candle = vp_Candle.new(h, l, v, d)
+        vp_instance.store(vp_candle, vp_NUM_ROWS)
+
+    if barstate.islast
+        vp_instance.update(vp_NUM_ROWS, vp_MAX_WIDTH, vp_HEIGHT_PERCENTAGE_PER_ROW, vp_COLOR, vp_SHOW_DELTA, vp_BUY_COLOR, vp_SELL_COLOR, vp_DISPLAY_VA, vp_VALUE_AREA_PERCENT, vp_VAL_COLOR, vp_VAH_COLOR, vp_DISPLAY_POC, vp_POC_COLOR, vp_BASE_OFFSET, vp_EXTEND_LEFT, vp_LABEL_OFFSET)
+
+
+// =============================================================================
+//                      4. SMART MONEY CONCEPTS MODULE
+// =============================================================================
+string smc_group = 'Smart Money Concepts'
+bool smc_showTrendInput = input.bool(false, 'Color Candles', group=smc_group)
+color smc_bullColor = input.color(#089981, 'Bull Color', group=smc_group)
+color smc_bearColor = input.color(#F23645, 'Bear Color', group=smc_group)
+
+color smc_candleColor = close >= open ? smc_bullColor : smc_bearColor
+float smc_plotOpen = show_smc and smc_showTrendInput ? open : na
+plotcandle(smc_plotOpen, high, low, close, color=smc_candleColor, wickcolor=smc_candleColor, bordercolor=smc_candleColor)
+
+// =============================================================================
+//                      5. SESSION PROFILE MODULE
+// =============================================================================
+string sp_group = 'Session Profile Settings'
+bool sp_showDailyHighLow = input.bool(true, 'Show Daily High/Low', group=sp_group)
+color sp_dailyHighColor = input.color(color.aqua, 'Daily High', group=sp_group)
+color sp_dailyLowColor = input.color(color.orange, 'Daily Low', group=sp_group)
+
+float sp_prevDailyHigh = request.security(syminfo.tickerid, 'D', high[1], lookahead=barmerge.lookahead_on)
+float sp_prevDailyLow = request.security(syminfo.tickerid, 'D', low[1], lookahead=barmerge.lookahead_on)
+
+plot(show_sp and sp_showDailyHighLow ? sp_prevDailyHigh : na, 'Prev Daily High', sp_dailyHighColor, 1, plot.style_linebr)
+plot(show_sp and sp_showDailyHighLow ? sp_prevDailyLow : na, 'Prev Daily Low', sp_dailyLowColor, 1, plot.style_linebr)
